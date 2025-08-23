@@ -1,4 +1,6 @@
 import psycopg2, os, dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
 
 dotenv.load_dotenv()
 
@@ -10,5 +12,19 @@ PG_CONN = {
     "port": os.environ.get("PG_PORT")
 }
 
+DATABASE_URL = f"postgresql+psycopg2://{PG_CONN['user']}:{PG_CONN['password']}@{PG_CONN['host']}:{PG_CONN['port']}/{PG_CONN['dbname']}"
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
 def get_pg_conn():
-    return psycopg2.connect(**PG_CONN)
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# def get_pg_conn():
+#     return psycopg2.connect(**PG_CONN)

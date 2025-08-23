@@ -1,7 +1,8 @@
 import os, tempfile, uuid
 from datetime import datetime, timezone
+from typing import Annotated
 import requests
-from fastapi import Request
+from fastapi import Request, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
@@ -18,11 +19,12 @@ from agent.model import llm,embedding_model
 from langchain_milvus import Milvus
 from connect_milvus import connect_milvus
 from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, utility
-from agent.tool_call import rag_search, track_order_tool
+from agent.tool_call import track_order_tool, test_list_collections
 from sentiment_model.s_model import detect_sentiment
 from langchain.tools import Tool
 
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from intents.database import get_pg_conn
 from intents.intent_matcher import load_intents, match_intent
 
@@ -33,7 +35,6 @@ import dotenv
 dotenv.load_dotenv()
 
 app = FastAPI()
-db = get_pg_conn()
 connect_milvus()
 
 app.add_middleware(
@@ -43,30 +44,99 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.post("/create_collections")
-def create_collection(req: CollectionCreate):
+def create_collection(req: CollectionCreate, db: Session = Depends(get_pg_conn)):
+
+    desc = req.description if req.description else f"Collection {req.name}"
     fields = [
         FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
         FieldSchema(name="upload_id", dtype=DataType.VARCHAR, max_length=50),
         FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=req.dim),
         FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=5000),
     ]
-    schema = CollectionSchema(fields, description=f"Collection {req.name}")
+    schema = CollectionSchema(fields, description=desc)
     Collection(name=req.name, schema=schema)
-    return {"status": "success", "collection": req.name}
 
-@app.get("/collections")
-def list_collections():
-    return {"collections": utility.list_collections()}
+    result = db.execute(text("""
+        INSERT INTO collections (name, dim, description, created_at)
+        VALUES (:name, :dim, :desc, :created_at)
+        RETURNING id
+    """), {
+        "name": req.name,
+        "dim": req.dim,
+        "desc": desc,
+        "created_at": datetime.now(timezone.utc)
+    })
+
+    new_id = result.scalar()
+    db.commit()
+
+    return {"status": "success", "collection": req.name, "id": new_id, "description": desc}
+
+@app.get("/get-collections")
+def list_collections(db: Session = Depends(get_pg_conn)):
+    result = db.execute(text("SELECT id, name, dim, description, created_at FROM collections ORDER BY created_at DESC"))
+    collections = [dict(row) for row in result.mappings().all()]
+    return {"collections": collections}
+
+@app.get("/get-collections-ai")
+def list_collections(db: Session = Depends(get_pg_conn)):
+    result = db.execute(text("SELECT name, description FROM collections"))
+    collections = [dict(row) for row in result.mappings().all()]
+    return {"collections": collections}
+
+@app.get("/get-upload_history")
+def list_upload_history(collection: str = None, db: Session = Depends(get_pg_conn)):
+    if collection:
+        result = db.execute(text("""
+            SELECT upload_id, collection, filename, timestamp, count
+            FROM upload_history
+            WHERE collection = :collection
+            ORDER BY timestamp DESC
+        """), {"collection": collection})
+    else:
+        result = db.execute(text("""
+            SELECT upload_id, collection, filename, timestamp, count
+            FROM upload_history
+            ORDER BY timestamp DESC
+        """))
+
+    uploads = [dict(row) for row in result.mappings().all()]
+    return {"upload_history": uploads}
 
 @app.delete("/delete_collections/{name}")
-def drop_collection(name: str):
-    utility.drop_collection(name)
+def drop_collection(name: str, db: Session = Depends(get_pg_conn)):
+    if utility.has_collection(name):
+        utility.drop_collection(name)
+    db.execute(text("DELETE FROM upload_history WHERE collection = :name"), {"name": name})
+    db.execute(text("DELETE FROM collections WHERE name = :name"), {"name": name})
+    db.commit()
+
     return {"status": "deleted", "collection": name}
 
+@app.delete("/delete_file/{upload_id}")
+def delete_uploaded_file(upload_id: str, db: Session = Depends(get_pg_conn)):
+
+    result = db.execute(text("""
+        SELECT collection, filename FROM upload_history WHERE upload_id = :upload_id
+    """), {"upload_id": upload_id}).fetchone()
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    collection_name, filename = result
+
+    if utility.has_collection(collection_name):
+            collection = Collection(collection_name)
+            collection.delete(expr=f"upload_id == '{upload_id}'")
+
+    db.execute(text("DELETE FROM upload_history WHERE upload_id = :upload_id"), {"upload_id": upload_id})
+    db.commit()
+
+    return {"status": "deleted", "upload_id": upload_id, "file": filename, "collection": collection_name}
+
 @app.post("/upload-file")
-async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), collection_name: str = Form("docs")):
+async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), collection_name: str = Form("docs"), db: Session = Depends(get_pg_conn)):
     suffix = ".pdf" if file_type == "pdf" else ".txt"
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -100,20 +170,28 @@ async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), 
     )
     vectorstore.add_documents(chunks)
 
-    cur = db.cursor()
-    cur.execute("""
+    db.execute(text("""
         INSERT INTO upload_history (upload_id, collection, filename, timestamp, count)
-        VALUES (%s, %s, %s, %s, %s)
-    """, (upload_id, collection_name, file.filename, timestamp, len(chunks)))
+        VALUES (:upload_id, :collection, :filename, :timestamp, :count)
+    """), {
+        "upload_id": upload_id,
+        "collection": collection_name,
+        "filename": file.filename,
+        "timestamp": timestamp,
+        "count": len(chunks)
+    })
+
     db.commit()
-    cur.close()
-    db.close()
 
-    return {"status": "uploaded", "upload_id": upload_id, "file": file.filename}
-
+    return {
+        "status": "uploaded",
+        "upload_id": upload_id,
+        "file": file.filename,
+        "chunks": len(chunks)
+    }
 
 @app.post("/chat")
-async def chat(chatmessage: RequestMessage):
+async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn)):
     messages = []
     humanmes = []
     
@@ -148,20 +226,15 @@ async def chat(chatmessage: RequestMessage):
     if intent_name:
         intent_content =f"Intent: {intent_name}, Tool: {tool_name}"
 
-    messages.insert(0, SystemMessage(content=f"""
-    [INTENT] {intent_content}
-    [SENTIMENT] {sentiment_content}""".strip()))
+    messages.insert(0, SystemMessage(content=f"""[INTENT] {intent_content} [SENTIMENT] {sentiment_content}""".strip()))
 
-    tools = []
+    tools = [test_list_collections]
     if tool_name == "track_order_tool":
-        tools.append(Tool.from_function(track_order_tool, name="track_order_tool", description="ตรวจสอบสถานะ"))
+        tools.append(Tool.from_function(track_order_tool, name="track_order_tool", description="เครื่องมือสำหรับติดตามการจัดส่งสิ้นค้า"))
 
     agent = react_agent(llm, tools, ADMIN)
     result = await agent.ainvoke({"messages": messages})
     final_result = result["messages"][-1].content
-
-    print(humanmes)
-    print(f"intent score {score}")
     
     return {
         "human_message": last_human_message,
@@ -172,10 +245,10 @@ async def chat(chatmessage: RequestMessage):
         "full_messages": result["messages"]
     }
 
-
 @app.get("/")
 async def health_check():
     return {"status": "healthy"}
+
 
 if __name__ == "__main__":
     import uvicorn

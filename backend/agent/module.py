@@ -19,6 +19,7 @@ class AgentResponse(BaseModel):
 class CollectionCreate(BaseModel):
     name: str
     dim: int = 1024
+    description: Optional[str] = None
 
 class WebURL(BaseModel):
     url: str
