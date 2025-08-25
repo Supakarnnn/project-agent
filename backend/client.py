@@ -1,24 +1,21 @@
-import os, tempfile, uuid
+import os, tempfile, uuid, requests
 from datetime import datetime, timezone
 from typing import Annotated
-import requests
-from fastapi import Request, Depends, HTTPException
+from fastapi import Request, Depends, HTTPException, APIRouter
 from fastapi.responses import JSONResponse
 from bs4 import BeautifulSoup
-from pydantic import BaseModel
 from fastapi import FastAPI, UploadFile, File, Form
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, WebBaseLoader
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
 from agent.prompt import ADMIN
-from agent.module import RequestMessage, CollectionCreate, WebURL
-from langchain_core.documents import Document
+from agent.module import RequestMessage, CollectionCreate, WebURL, ConfigUpdate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from agent.model import llm,embedding_model
+from agent.model import embedding_model, get_current_llm_setting
 from langchain_milvus import Milvus
 from connect_milvus import connect_milvus
-from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, utility
+from pymilvus import FieldSchema, CollectionSchema, DataType, Collection, utility
 from agent.tool_call import track_order_tool, test_list_collections
 from sentiment_model.s_model import detect_sentiment
 from langchain.tools import Tool
@@ -35,6 +32,7 @@ import dotenv
 dotenv.load_dotenv()
 
 app = FastAPI()
+router = APIRouter(prefix="/admin", tags=["admin"])
 connect_milvus()
 
 app.add_middleware(
@@ -44,7 +42,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/create_collections")
+@router.get("/config")
+def get_config(db: Session = Depends(get_pg_conn)):
+    config = db.execute(text("SELECT * FROM llm_configs ORDER BY id DESC LIMIT 1")).mappings().first()
+    return config
+
+@router.post("/config")
+def update_config(req: ConfigUpdate, db: Session = Depends(get_pg_conn)):
+    db.execute(
+        text("INSERT INTO llm_configs (model, temperature, top_p, system_prompt) VALUES (:m, :t, :tp, :p)"),
+        {"m": req.model, "t": req.temperature, "tp": req.top_p, "p": req.system_prompt}
+    )
+    db.commit()
+    return {"message": "updated successfully"}
+
+@router.get("/test-llm")
+def test_llm(db: Session = Depends(get_pg_conn)):
+    try:
+        llm, system_prompt = get_current_llm_setting(db)
+        return {
+            "status": "success",
+            "model": llm.model_name,
+            "system_prompt_preview": system_prompt[:100]
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.post("/create_collections")
 def create_collection(req: CollectionCreate, db: Session = Depends(get_pg_conn)):
 
     desc = req.description if req.description else f"Collection {req.name}"
@@ -73,19 +97,19 @@ def create_collection(req: CollectionCreate, db: Session = Depends(get_pg_conn))
 
     return {"status": "success", "collection": req.name, "id": new_id, "description": desc}
 
-@app.get("/get-collections")
+@router.get("/get-collections")
 def list_collections(db: Session = Depends(get_pg_conn)):
     result = db.execute(text("SELECT id, name, dim, description, created_at FROM collections ORDER BY created_at DESC"))
     collections = [dict(row) for row in result.mappings().all()]
     return {"collections": collections}
 
-@app.get("/get-collections-ai")
+@router.get("/get-collections-ai")
 def list_collections(db: Session = Depends(get_pg_conn)):
     result = db.execute(text("SELECT name, description FROM collections"))
     collections = [dict(row) for row in result.mappings().all()]
     return {"collections": collections}
 
-@app.get("/get-upload_history")
+@router.get("/get-upload_history")
 def list_upload_history(collection: str = None, db: Session = Depends(get_pg_conn)):
     if collection:
         result = db.execute(text("""
@@ -104,7 +128,7 @@ def list_upload_history(collection: str = None, db: Session = Depends(get_pg_con
     uploads = [dict(row) for row in result.mappings().all()]
     return {"upload_history": uploads}
 
-@app.delete("/delete_collections/{name}")
+@router.delete("/delete_collections/{name}")
 def drop_collection(name: str, db: Session = Depends(get_pg_conn)):
     if utility.has_collection(name):
         utility.drop_collection(name)
@@ -114,7 +138,7 @@ def drop_collection(name: str, db: Session = Depends(get_pg_conn)):
 
     return {"status": "deleted", "collection": name}
 
-@app.delete("/delete_file/{upload_id}")
+@router.delete("/delete_file/{upload_id}")
 def delete_uploaded_file(upload_id: str, db: Session = Depends(get_pg_conn)):
 
     result = db.execute(text("""
@@ -135,7 +159,7 @@ def delete_uploaded_file(upload_id: str, db: Session = Depends(get_pg_conn)):
 
     return {"status": "deleted", "upload_id": upload_id, "file": filename, "collection": collection_name}
 
-@app.post("/upload-file")
+@router.post("/upload-file")
 async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), collection_name: str = Form("docs"), db: Session = Depends(get_pg_conn)):
     suffix = ".pdf" if file_type == "pdf" else ".txt"
 
@@ -190,6 +214,8 @@ async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), 
         "chunks": len(chunks)
     }
 
+app.include_router(router)
+
 @app.post("/chat")
 async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn)):
     messages = []
@@ -232,7 +258,8 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn)):
     if tool_name == "track_order_tool":
         tools.append(Tool.from_function(track_order_tool, name="track_order_tool", description="เครื่องมือสำหรับติดตามการจัดส่งสิ้นค้า"))
 
-    agent = react_agent(llm, tools, ADMIN)
+    llm, system_prompt = get_current_llm_setting(db)
+    agent = react_agent(llm, tools, system_prompt)
     result = await agent.ainvoke({"messages": messages})
     final_result = result["messages"][-1].content
     

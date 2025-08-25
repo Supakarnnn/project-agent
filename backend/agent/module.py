@@ -23,3 +23,9 @@ class CollectionCreate(BaseModel):
 
 class WebURL(BaseModel):
     url: str
+
+class ConfigUpdate(BaseModel):
+    model: str
+    temperature: Optional[float] = 0.2
+    top_p: Optional[float] = 0 
+    system_prompt: str

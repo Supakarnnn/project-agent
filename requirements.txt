@@ -17,8 +17,4 @@ python-multipart==0.0.20
 SQLAlchemy==2.0.42
 psycopg2-binary==2.9.10
 
-# PyTorch (CUDA 12.8)
-torch
-torchvision
-torchaudio
--f https://download.pytorch.org/whl/cu128
+# pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu128

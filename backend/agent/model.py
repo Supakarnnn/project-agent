@@ -1,6 +1,8 @@
 import os
 import torch
 import dotenv
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from sqlalchemy import Column, Integer, String, ForeignKey
@@ -9,11 +11,14 @@ from sqlalchemy.orm import relationship, declarative_base
 
 dotenv.load_dotenv()
 
-llm = ChatOpenAI(
-   api_key=os.environ.get("OPENAI_KEY"),
-   model='gpt-4o-mini',
-   temperature=0.4
-)
+def get_current_llm_setting(db: Session):
+    config = db.execute(text("SELECT * FROM llm_configs ORDER BY id DESC LIMIT 1")).mappings().first()
+    llm = ChatOpenAI(
+        api_key=os.environ.get("OPENAI_KEY"),
+        model=config["model"],
+        temperature=config["temperature"]
+    )
+    return llm, config["system_prompt"]
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 embedding_model = HuggingFaceEmbeddings(
