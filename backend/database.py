@@ -1,6 +1,8 @@
 import psycopg2, os, dotenv
 from sqlalchemy import create_engine
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.exc import SQLAlchemyError
 
 dotenv.load_dotenv()
 
@@ -24,7 +26,3 @@ def get_pg_conn():
         yield db
     finally:
         db.close()
-
-
-# def get_pg_conn():
-#     return psycopg2.connect(**PG_CONN)

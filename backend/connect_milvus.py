@@ -7,9 +7,9 @@ dotenv.load_dotenv()
 def connect_milvus():
     connections.connect(alias="default", host=os.environ.get("MILVUS_HOST"), port=os.environ.get("MILVUS_PORT"))
 
-# if connections.has_connection("default"):
-#     print("milvus connected")
-# else:
-#     print("cant connect milvus")
+# from pymilvus import connections
 
+# connections.connect("default", host="172.18.1.225", port="443")
 
+# from pymilvus import utility
+# print(utility.list_collections())

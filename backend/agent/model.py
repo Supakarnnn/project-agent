@@ -31,7 +31,7 @@ Base = declarative_base()
 
 class Intent(Base):
     __tablename__ = "intents"
-    id = Column(Integer, primary_key=True)
+    intent_id = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     description = Column(String)
     tool_name = Column(String)
@@ -39,8 +39,8 @@ class Intent(Base):
 
 class TrainingPhrase(Base):
     __tablename__ = "training_phrases"
-    id = Column(Integer, primary_key=True)
-    intent_id = Column(Integer, ForeignKey("intents.id", ondelete="CASCADE"))
+    tp_id = Column(Integer, primary_key=True)
+    intent_id = Column(Integer, ForeignKey("intents.intent_id", ondelete="CASCADE"))
     phrase = Column(String, nullable=False)
     intent = relationship("Intent", back_populates="training_phrases")
 

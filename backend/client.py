@@ -9,20 +9,19 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader, WebBas
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
-from agent.prompt import ADMIN
 from agent.module import RequestMessage, CollectionCreate, WebURL, ConfigUpdate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from agent.model import embedding_model, get_current_llm_setting
 from langchain_milvus import Milvus
 from connect_milvus import connect_milvus
 from pymilvus import FieldSchema, CollectionSchema, DataType, Collection, utility
-from agent.tool_call import track_order_tool, test_list_collections
+from agent.tool_call import get_registered_tools, track_order_tool, test_list_collections
 from sentiment_model.s_model import detect_sentiment
 from langchain.tools import Tool
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from intents.database import get_pg_conn
+from database import get_pg_conn
 from intents.intent_matcher import load_intents, match_intent
 
 import urllib3
@@ -159,6 +158,50 @@ def delete_uploaded_file(upload_id: str, db: Session = Depends(get_pg_conn)):
 
     return {"status": "deleted", "upload_id": upload_id, "file": filename, "collection": collection_name}
 
+@router.get("/intents/{intent_id}")
+def get_intent(intend_id: int, db: Session = Depends(get_pg_conn)):
+    res = db.execute(text("SELECT intent_id, name, description, tool_name FROM intents WHERE intent_id = :intent_id"),{"intent_id": intend_id}).mappings().first()
+    if not res:
+        return "Not Found"
+    return dict(res)
+
+@router.get("/training-phrases/{intent_id}")
+def get_tp(intent_id: int, db: Session = Depends(get_pg_conn)):
+    res = db.execute(text("SELECT tp_id, intent_id, phrase FROM training_phrases WHERE intent_id = :intent_id"),{"intent_id": intent_id}).mappings().all()
+    if not res:
+        return "Not Found"
+    return [dict(r) for r in res]
+
+@router.post("/create-intents")
+def create_intent(name: str, tool_name: str, description: str, db: Session = Depends(get_pg_conn)):
+    try:
+        res = db.execute(
+            text("""
+                INSERT INTO intents (name, description, tool_name)
+                VALUES (:name, :description, :tool_name)
+                RETURNING intent_id
+            """),
+            {"name": name, "description": description, "tool_name": tool_name},
+        )
+        intent_id = res.scalar()
+        db.commit()
+        return {"intent_id": intent_id, "name": name, "description": description, "tool_name": tool_name}
+        
+    except Exception as e:
+        db.rollback()
+        return f"Cant Update intents {e}"
+
+@router.post("/create-training-phrases")
+def create_training_phrases(intent_id: int, phrase: str, db: Session = Depends(get_pg_conn)):
+    intent = db.execute(text("SELECT intent_id FROM intents WHERE intent_id = :intent_id"),{"intent_id": intent_id}).first()
+    if not intent:
+        return "intent id Not exist"
+    else:
+        res = db.execute(text("INSERT INTO training_phrases (intent_id, phrase) VALUES (:intent_id, :phrase) RETURNING tp_id"),{"intent_id": intent_id, "phrase": phrase})
+        tp_id = res.scalar()
+        db.commit()
+        return {"tp_id": tp_id, "intent_id": intent_id, "phrase": phrase}
+
 @router.post("/upload-file")
 async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), collection_name: str = Form("docs"), db: Session = Depends(get_pg_conn)):
     suffix = ".pdf" if file_type == "pdf" else ".txt"
@@ -191,6 +234,7 @@ async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), 
     vectorstore = Milvus(
         embedding_function=embedding_model,
         collection_name=collection_name,
+        connection_args={"alias": "default"}
     )
     vectorstore.add_documents(chunks)
 
@@ -214,6 +258,9 @@ async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), 
         "chunks": len(chunks)
     }
 
+@router.get("/tools-in-server")
+async def tools_in_server():
+    return {"available_tools": get_registered_tools()}
 app.include_router(router)
 
 @app.post("/chat")

@@ -32,6 +32,6 @@ def match_intent(user_inputs: List[str], intent_data):
             best_score = sim
             matched = item
 
-    if best_score >= 0.6:
+    if best_score >= 0.7:
         return matched["intent"], matched["tool"], float(best_score)
     return None, None, float(best_score)
