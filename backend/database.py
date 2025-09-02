@@ -26,3 +26,6 @@ def get_pg_conn():
         yield db
     finally:
         db.close()
+
+def get_db_session():
+    return SessionLocal()

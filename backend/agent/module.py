@@ -7,7 +7,6 @@ class Message(BaseModel):
 
 class RequestMessage(BaseModel):
     messages: List[Message]
-    session_id: str = None
 
 class AgentResponse(BaseModel):
     response: str

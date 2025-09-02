@@ -1,7 +1,8 @@
+import asyncio, logging
 import os, tempfile, uuid, requests
 from datetime import datetime, timezone
-from typing import Annotated
-from fastapi import Request, Depends, HTTPException, APIRouter
+from typing import Annotated, Optional
+from fastapi import Request, Depends, HTTPException, APIRouter, Header
 from fastapi.responses import JSONResponse
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, UploadFile, File, Form
@@ -15,14 +16,17 @@ from agent.model import embedding_model, get_current_llm_setting
 from langchain_milvus import Milvus
 from connect_milvus import connect_milvus
 from pymilvus import FieldSchema, CollectionSchema, DataType, Collection, utility
-from agent.tool_call import get_registered_tools, track_order_tool, test_list_collections
+from agent.tool_call import get_registered_tools, track_order_tool, for_list_collections, rag_search, create_order
+from intents.intent_matcher import load_intents, resolve_intent_with_context, GLOBAL_MIN_CONFIDENCE
+from intents.runtime import get_session_state, save_session_state
+from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now
 from sentiment_model.s_model import detect_sentiment
 from langchain.tools import Tool
 
+from contextlib import asynccontextmanager, suppress
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from database import get_pg_conn
-from intents.intent_matcher import load_intents, match_intent
+from database import get_pg_conn, get_db_session
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -30,7 +34,31 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import dotenv
 dotenv.load_dotenv()
 
-app = FastAPI()
+AUTO_CLOSE_EVERY_SEC = 60
+async def _auto_close_loop(app):
+    while True:
+        try:
+            db = get_db_session()
+            try:
+                autoclose_inactive_sessions(db)
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("autoclose loop error")
+        await asyncio.sleep(AUTO_CLOSE_EVERY_SEC)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.autoclose_task = asyncio.create_task(_auto_close_loop(app))
+    try:
+        yield
+    finally:
+        app.state.autoclose_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await app.state.autoclose_task
+
+app = FastAPI(lifespan=lifespan)
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
 connect_milvus()
 
@@ -41,12 +69,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def _tool_name(t) -> str:
+    return getattr(t, "__name__", getattr(t, "name", "tool"))
+
 @router.get("/config")
 def get_config(db: Session = Depends(get_pg_conn)):
     config = db.execute(text("SELECT * FROM llm_configs ORDER BY id DESC LIMIT 1")).mappings().first()
     return config
 
-@router.post("/config")
+@router.post("/update-config")
 def update_config(req: ConfigUpdate, db: Session = Depends(get_pg_conn)):
     db.execute(
         text("INSERT INTO llm_configs (model, temperature, top_p, system_prompt) VALUES (:m, :t, :tp, :p)"),
@@ -261,12 +292,17 @@ async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), 
 @router.get("/tools-in-server")
 async def tools_in_server():
     return {"available_tools": get_registered_tools()}
+
 app.include_router(router)
 
 @app.post("/chat")
-async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn)):
+async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), external_session_id: Optional[str] = Header(None, alias="X-Session-Id"), close_now: Optional[str] = Header(None, alias="X-Close-Session")):
     messages = []
     humanmes = []
+
+    print("X-Session-Id received =", external_session_id)
+    autoclose_inactive_sessions(db)
+    session_id = get_or_create_session(db, external_session_id)
     
     last_human_message = ""
     for m in reversed(chatmessage.messages):
@@ -283,11 +319,42 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn)):
         elif chat.role == 'system':
             messages.append(SystemMessage(content=chat.content))
 
+    #========================================================================================================#
     intent_data = load_intents(db)
-    intent_name, tool_name, score = match_intent(humanmes, intent_data)    
+    state = get_session_state(db, session_id)
+    intent_name, tool_name, score, source = resolve_intent_with_context(humanmes, intent_data, state)
+
+    tool_registry = {
+        "for_list_collections": for_list_collections,
+        "track_order_tool": track_order_tool,
+        "rag_search": rag_search,
+        "create_order": create_order,
+    }
+
+    chosen_tools = [tool_registry["rag_search"]]
+    if tool_name and tool_name in tool_registry:
+        chosen_tools.append(tool_registry[tool_name])
+
+    # print(humanmes)
+    # print(source)
+    # print(score)
+    # print(chosen_tools)
+
+    llm, system_prompt = get_current_llm_setting(db)
+    tool_names = ", ".join(_tool_name(t) for t in chosen_tools) if chosen_tools else "None"
+
+    intent_prompt_template = f"""[INTENT] {intent_name or 'None'} (confidence={score:.2f}) [ALLOWED_TOOLS] {tool_names}
+    [BEHAVIOR RULES]
+    - คุณสามารถใช้เฉพาะเครื่องมือในรายการที่อนุญาต (Allowed Tools) เท่านั้น
+    - หากตรวจจับได้ว่าเป็นงานเฉพาะ ควรพิจารณาใช้เครื่องมือเฉพาะทางก่อน
+    - หากเป็นคำถามทั่วไปหรือยังไม่ชัดเจน ให้ใช้ rag_search หรือถามย้ำเพื่อให้ชัดเจนก่อน
+    - หากข้อมูลไม่พอ ให้ถามลูกค้าอย่างสั้น กระชับ และเฉพาะเจาะจงก่อนเรียกใช้เครื่องมือ
+    - หลีกเลี่ยงการเดาข้อมูล หากไม่แน่ใจต้องถามย้ำด้วยถ้อยคำสุภาพ
+    """.strip()
+    #========================================================================================================#
+
     sentiment = detect_sentiment(last_human_message)
     sentiment_content = ""
-    intent_content = ""
 
     if sentiment == "negative":
         sentiment_content = "ลูกค้าอยู่ในอารมณ์ไม่ดี กรุณาตอบกลับด้วยความสุภาพและช่วยให้เขาใจเย็นลง"
@@ -296,25 +363,30 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn)):
     else:
         sentiment_content = "ลูกค้าอารมณ์ปกติ ตอบกลับได้ตามปกติ"
 
-    if intent_name:
-        intent_content =f"Intent: {intent_name}, Tool: {tool_name}"
+    messages.insert(1, SystemMessage(content=f"ระบบจับอารมณ์อัตโนมัติ: [SENTIMENT] {sentiment_content}"))
+    messages.insert(2, SystemMessage(content=intent_prompt_template))
 
-    messages.insert(0, SystemMessage(content=f"""[INTENT] {intent_content} [SENTIMENT] {sentiment_content}""".strip()))
-
-    tools = [test_list_collections]
-    if tool_name == "track_order_tool":
-        tools.append(Tool.from_function(track_order_tool, name="track_order_tool", description="เครื่องมือสำหรับติดตามการจัดส่งสิ้นค้า"))
-
-    llm, system_prompt = get_current_llm_setting(db)
-    agent = react_agent(llm, tools, system_prompt)
+    agent = react_agent(llm, chosen_tools, system_prompt)
     result = await agent.ainvoke({"messages": messages})
     final_result = result["messages"][-1].content
     
+    state.update({
+        "active_intent": intent_name,
+        "status": "in_progress" if intent_name else "idle"
+    })
+    save_session_state(db, session_id, state)
+
+    update_session_activity(db, session_id, add_msg_count=2)
+    if (close_now or "").lower() == "true":
+        close_session_now(db, session_id)
+
     return {
+        "session_id": str(session_id),
         "human_message": last_human_message,
         "sentiment_model_message": sentiment_content,
         "response": final_result,
         "sentiment": sentiment,
+        "intent": intent_name,
         "intent_score": float(score) if score else None,
         "full_messages": result["messages"]
     }

@@ -30,7 +30,7 @@ dotenv.load_dotenv()
 
 
 @tool
-def test_list_collections():
+def for_list_collections():
     """เครื่องมือสำหรับดูข้อมูล collection ใน Milvus Vector Database ผ่าน API"""
     print("LLM is trying to use test_list_collections")
     try:
@@ -42,11 +42,23 @@ def test_list_collections():
     except Exception:
         return "ไม่มี collection"
 
-
+@tool
 def track_order_tool(order_id: str) -> str:
     """เครื่องมือสำหรับ ติดตามการจัดส่งสิ้นค้า"""
     print(f"LLM is try using track_order_tool with {order_id}")
     return f"สถานะของออเดอร์ {order_id} คือ: กำลังจัดส่ง"
+
+@tool
+async def rag_search(query: str) -> str:
+    """เครื่องมือสำหรับดูข้อมูลสิ้นค้าและบริการของบริษัทด้วย RAG"""
+    print("LLM is trying to use rag_search")
+    return "ระบบยังไม่พร้อม"
+
+@tool
+def create_order():
+    """เครื่องมือสำหรับสร้างคำสั่งซื้อสิ้นค้า"""
+    print("LLM is trying to use create_order")
+    return "ระบบยังไม่พร้อม"
 
 
 def get_registered_tools():
