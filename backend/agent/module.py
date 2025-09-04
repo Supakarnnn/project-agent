@@ -28,3 +28,7 @@ class ConfigUpdate(BaseModel):
     temperature: Optional[float] = 0.2
     top_p: Optional[float] = 0 
     system_prompt: str
+
+class LoginIn(BaseModel):
+    name: str
+    password: str

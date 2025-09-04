@@ -5,12 +5,12 @@ from typing import Annotated, Optional
 from fastapi import Request, Depends, HTTPException, APIRouter, Header
 from fastapi.responses import JSONResponse
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Response
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, WebBaseLoader
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
-from agent.module import RequestMessage, CollectionCreate, WebURL, ConfigUpdate
+from agent.module import RequestMessage, CollectionCreate, WebURL, ConfigUpdate, LoginIn
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from agent.model import embedding_model, get_current_llm_setting
 from langchain_milvus import Milvus
@@ -21,7 +21,7 @@ from intents.intent_matcher import load_intents, resolve_intent_with_context, GL
 from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now
 from sentiment_model.s_model import detect_sentiment
-from langchain.tools import Tool
+from auth_admin.auth import verify_password,hash_password
 
 from contextlib import asynccontextmanager, suppress
 from sqlalchemy.orm import Session
@@ -60,10 +60,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
+auth_router = APIRouter(prefix="/auth",tags=["admin-auth"])
 connect_milvus()
 
 app.add_middleware(
     CORSMiddleware,
+    allow_credentials=True,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,6 +73,47 @@ app.add_middleware(
 
 def _tool_name(t) -> str:
     return getattr(t, "__name__", getattr(t, "name", "tool"))
+
+@auth_router.post("/register")
+def register(name: str, password: str, role: str = "admin", db: Session = Depends(get_pg_conn)):
+    exists = db.execute(text("SELECT 1 FROM a_user WHERE name=:n"), {"n": name}).first()
+    if exists:
+        return "Username already exists"
+
+    hashed = hash_password(password)
+    db.execute(
+        text("INSERT INTO a_user (name, password, role, is_active) VALUES (:n, :p, :r, TRUE)"),
+        {"n": name, "p": hashed, "r": role}
+    )
+    db.commit()
+    return {"ok": True, "msg": f"User {name} registered successfully"}
+
+@auth_router.post("/login")
+def login(data: LoginIn, response: Response, db: Session = Depends(get_pg_conn)):
+    row = db.execute(
+        text("SELECT * FROM a_user WHERE name=:n AND is_active=TRUE"),
+        {"n": data.name}
+    ).mappings().first()
+
+    if not row or not verify_password(data.password, row["password"]):
+        return "Invalid credentials"
+
+    response.set_cookie("a_user", row["name"], httponly=True, samesite="lax")
+    return {"ok": True, "name": row["name"], "role": row["role"]}
+
+@auth_router.post("/logout")
+def logout(response: Response):
+    response.delete_cookie("a_user")
+    return {"ok": True}
+
+@auth_router.get("/check")
+def check(request: Request):
+    user = request.cookies.get("a_user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Not logged in")
+    return {"name": user}
+
+app.include_router(auth_router)
 
 @router.get("/config")
 def get_config(db: Session = Depends(get_pg_conn)):
