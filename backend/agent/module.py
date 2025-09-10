@@ -32,3 +32,8 @@ class ConfigUpdate(BaseModel):
 class LoginIn(BaseModel):
     name: str
     password: str
+
+class IntentCreate(BaseModel):
+    name: str
+    tool_name: str
+    description: str

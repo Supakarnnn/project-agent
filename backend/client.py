@@ -10,13 +10,13 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader, WebBas
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
-from agent.module import RequestMessage, CollectionCreate, WebURL, ConfigUpdate, LoginIn
+from agent.module import RequestMessage, CollectionCreate, WebURL, ConfigUpdate, LoginIn, IntentCreate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from agent.model import embedding_model, get_current_llm_setting
 from langchain_milvus import Milvus
 from connect_milvus import connect_milvus
 from pymilvus import FieldSchema, CollectionSchema, DataType, Collection, utility
-from agent.tool_call import get_registered_tools, track_order_tool, for_list_collections, rag_search, create_order
+from agent.tool_call import get_registered_tools, track_order_tool, for_list_collections, rag_search, create_order, cancel_order
 from intents.intent_matcher import load_intents, resolve_intent_with_context, GLOBAL_MIN_CONFIDENCE
 from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now
@@ -232,50 +232,6 @@ def delete_uploaded_file(upload_id: str, db: Session = Depends(get_pg_conn)):
 
     return {"status": "deleted", "upload_id": upload_id, "file": filename, "collection": collection_name}
 
-@router.get("/intents/{intent_id}")
-def get_intent(intend_id: int, db: Session = Depends(get_pg_conn)):
-    res = db.execute(text("SELECT intent_id, name, description, tool_name FROM intents WHERE intent_id = :intent_id"),{"intent_id": intend_id}).mappings().first()
-    if not res:
-        return "Not Found"
-    return dict(res)
-
-@router.get("/training-phrases/{intent_id}")
-def get_tp(intent_id: int, db: Session = Depends(get_pg_conn)):
-    res = db.execute(text("SELECT tp_id, intent_id, phrase FROM training_phrases WHERE intent_id = :intent_id"),{"intent_id": intent_id}).mappings().all()
-    if not res:
-        return "Not Found"
-    return [dict(r) for r in res]
-
-@router.post("/create-intents")
-def create_intent(name: str, tool_name: str, description: str, db: Session = Depends(get_pg_conn)):
-    try:
-        res = db.execute(
-            text("""
-                INSERT INTO intents (name, description, tool_name)
-                VALUES (:name, :description, :tool_name)
-                RETURNING intent_id
-            """),
-            {"name": name, "description": description, "tool_name": tool_name},
-        )
-        intent_id = res.scalar()
-        db.commit()
-        return {"intent_id": intent_id, "name": name, "description": description, "tool_name": tool_name}
-        
-    except Exception as e:
-        db.rollback()
-        return f"Cant Update intents {e}"
-
-@router.post("/create-training-phrases")
-def create_training_phrases(intent_id: int, phrase: str, db: Session = Depends(get_pg_conn)):
-    intent = db.execute(text("SELECT intent_id FROM intents WHERE intent_id = :intent_id"),{"intent_id": intent_id}).first()
-    if not intent:
-        return "intent id Not exist"
-    else:
-        res = db.execute(text("INSERT INTO training_phrases (intent_id, phrase) VALUES (:intent_id, :phrase) RETURNING tp_id"),{"intent_id": intent_id, "phrase": phrase})
-        tp_id = res.scalar()
-        db.commit()
-        return {"tp_id": tp_id, "intent_id": intent_id, "phrase": phrase}
-
 @router.post("/upload-file")
 async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), collection_name: str = Form("docs"), db: Session = Depends(get_pg_conn)):
     suffix = ".pdf" if file_type == "pdf" else ".txt"
@@ -332,6 +288,65 @@ async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), 
         "chunks": len(chunks)
     }
 
+@router.get("/intents")
+def get_intent(db: Session = Depends(get_pg_conn)):
+    res = db.execute(text("SELECT intent_id, name, description, tool_name FROM intents")).mappings().all()
+    if not res:
+        return "Not Found"
+    return [dict(r) for r in res]
+
+@router.get("/training-phrases")
+def get_tp(db: Session = Depends(get_pg_conn)):
+    res = db.execute(text("SELECT tp_id, intent_id, phrase FROM training_phrases")).mappings().all()
+    if not res:
+        return "Not Found"
+    return [dict(r) for r in res]
+
+@router.post("/create-intents")
+def create_intent(req: IntentCreate, db: Session = Depends(get_pg_conn)):
+    try:
+        res = db.execute(
+            text("""
+                INSERT INTO intents (name, description, tool_name)
+                VALUES (:name, :description, :tool_name)
+                RETURNING intent_id
+            """),
+            {"name": req.name, "description": req.description, "tool_name": req.tool_name},
+        )
+        intent_id = res.scalar()
+        db.commit()
+        return {"intent_id": intent_id, "name": req.name, "description": req.description, "tool_name": req.tool_name}
+        
+    except Exception as e:
+        db.rollback()
+        return f"Cant Update intents {e}"
+    
+@router.delete("/delete-intents/{intent_id}")
+def delete_intent(intent_id: int, db: Session = Depends(get_pg_conn)):
+    try:
+        res = db.execute(
+            text("DELETE FROM intents WHERE intent_id = :id RETURNING intent_id"),
+            {"id": intent_id},
+        ).scalar()
+
+        db.commit()
+        return {"deleted": True, "intent_id": res}
+    
+    except Exception as e:
+        db.rollback()
+        return f"Cant delete intents {e}"
+
+@router.post("/create-training-phrases")
+def create_training_phrases(intent_id: int, phrase: str, db: Session = Depends(get_pg_conn)):
+    intent = db.execute(text("SELECT intent_id FROM intents WHERE intent_id = :intent_id"),{"intent_id": intent_id}).first()
+    if not intent:
+        return "intent id Not exist"
+    else:
+        res = db.execute(text("INSERT INTO training_phrases (intent_id, phrase) VALUES (:intent_id, :phrase) RETURNING tp_id"),{"intent_id": intent_id, "phrase": phrase})
+        tp_id = res.scalar()
+        db.commit()
+        return {"tp_id": tp_id, "intent_id": intent_id, "phrase": phrase}
+
 @router.get("/tools-in-server")
 async def tools_in_server():
     return {"available_tools": get_registered_tools()}
@@ -372,9 +387,10 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
         "track_order_tool": track_order_tool,
         "rag_search": rag_search,
         "create_order": create_order,
+        "cancel_order": cancel_order,
     }
 
-    chosen_tools = [tool_registry["rag_search"]]
+    chosen_tools = [tool_registry["rag_search"], tool_registry["for_list_collections"]]
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 

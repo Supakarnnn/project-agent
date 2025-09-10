@@ -60,6 +60,12 @@ def create_order():
     print("LLM is trying to use create_order")
     return "ระบบยังไม่พร้อม"
 
+@tool
+def cancel_order():
+    """เครื่องมือสำหรับยกเลิกคำสั่งซื้อสิ้นค้า"""
+    print("LLM is trying to use cancel_order")
+    return "ระบบยังไม่พร้อม"
+
 
 def get_registered_tools():
     tools = {}
