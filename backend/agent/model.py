@@ -16,7 +16,8 @@ def get_current_llm_setting(db: Session):
     llm = ChatOpenAI(
         api_key=os.environ.get("OPENAI_KEY"),
         model=config["model"],
-        temperature=config["temperature"]
+        temperature=config["temperature"],
+        logprobs=True,
     )
     return llm, config["system_prompt"]
 

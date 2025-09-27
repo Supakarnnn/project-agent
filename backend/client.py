@@ -1,16 +1,14 @@
 import asyncio, logging
-import os, tempfile, uuid, requests
+import os, tempfile, uuid
 from datetime import datetime, timezone
-from typing import Annotated, Optional
+from typing import Optional
 from fastapi import Request, Depends, HTTPException, APIRouter, Header
-from fastapi.responses import JSONResponse
-from bs4 import BeautifulSoup
 from fastapi import FastAPI, UploadFile, File, Form, Response
-from langchain_community.document_loaders import PyPDFLoader, TextLoader, WebBaseLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
-from agent.module import RequestMessage, CollectionCreate, WebURL, ConfigUpdate, LoginIn, IntentCreate
+from agent.module import RequestMessage, CollectionCreate, ConfigUpdate, LoginIn, IntentCreate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from agent.model import embedding_model, get_current_llm_setting
 from langchain_milvus import Milvus
@@ -22,11 +20,11 @@ from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now
 from sentiment_model.s_model import detect_sentiment
 from auth_admin.auth import verify_password,hash_password
-
+from agent.confident_cal import extract_token_logprobs, cal_confidence
 from contextlib import asynccontextmanager, suppress
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from database import get_pg_conn, get_db_session
+from database import get_pg_conn, get_db_session, get_maria_session, get_maria_conn
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -141,152 +139,152 @@ def test_llm(db: Session = Depends(get_pg_conn)):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@router.post("/create_collections")
-def create_collection(req: CollectionCreate, db: Session = Depends(get_pg_conn)):
+# @router.post("/create_collections")
+# def create_collection(req: CollectionCreate, db: Session = Depends(get_pg_conn)):
 
-    desc = req.description if req.description else f"Collection {req.name}"
-    fields = [
-        FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-        FieldSchema(name="upload_id", dtype=DataType.VARCHAR, max_length=50),
-        FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=req.dim),
-        FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=5000),
-    ]
-    schema = CollectionSchema(fields, description=desc)
-    Collection(name=req.name, schema=schema)
+#     desc = req.description if req.description else f"Collection {req.name}"
+#     fields = [
+#         FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+#         FieldSchema(name="upload_id", dtype=DataType.VARCHAR, max_length=50),
+#         FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=req.dim),
+#         FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=5000),
+#     ]
+#     schema = CollectionSchema(fields, description=desc)
+#     Collection(name=req.name, schema=schema)
 
-    result = db.execute(text("""
-        INSERT INTO collections (name, dim, description, created_at)
-        VALUES (:name, :dim, :desc, :created_at)
-        RETURNING id
-    """), {
-        "name": req.name,
-        "dim": req.dim,
-        "desc": desc,
-        "created_at": datetime.now(timezone.utc)
-    })
+#     result = db.execute(text("""
+#         INSERT INTO collections (name, dim, description, created_at)
+#         VALUES (:name, :dim, :desc, :created_at)
+#         RETURNING id
+#     """), {
+#         "name": req.name,
+#         "dim": req.dim,
+#         "desc": desc,
+#         "created_at": datetime.now(timezone.utc)
+#     })
 
-    new_id = result.scalar()
-    db.commit()
+#     new_id = result.scalar()
+#     db.commit()
 
-    return {"status": "success", "collection": req.name, "id": new_id, "description": desc}
+#     return {"status": "success", "collection": req.name, "id": new_id, "description": desc}
 
-@router.get("/get-collections")
-def list_collections(db: Session = Depends(get_pg_conn)):
-    result = db.execute(text("SELECT id, name, dim, description, created_at FROM collections ORDER BY created_at DESC"))
-    collections = [dict(row) for row in result.mappings().all()]
-    return {"collections": collections}
+# @router.get("/get-collections")
+# def list_collections(db: Session = Depends(get_pg_conn)):
+#     result = db.execute(text("SELECT id, name, dim, description, created_at FROM collections ORDER BY created_at DESC"))
+#     collections = [dict(row) for row in result.mappings().all()]
+#     return {"collections": collections}
 
-@router.get("/get-collections-ai")
-def list_collections(db: Session = Depends(get_pg_conn)):
-    result = db.execute(text("SELECT name, description FROM collections"))
-    collections = [dict(row) for row in result.mappings().all()]
-    return {"collections": collections}
+# @router.get("/get-collections-ai")
+# def list_collections(db: Session = Depends(get_pg_conn)):
+#     result = db.execute(text("SELECT name, description FROM collections"))
+#     collections = [dict(row) for row in result.mappings().all()]
+#     return {"collections": collections}
 
-@router.get("/get-upload_history")
-def list_upload_history(collection: str = None, db: Session = Depends(get_pg_conn)):
-    if collection:
-        result = db.execute(text("""
-            SELECT upload_id, collection, filename, timestamp, count
-            FROM upload_history
-            WHERE collection = :collection
-            ORDER BY timestamp DESC
-        """), {"collection": collection})
-    else:
-        result = db.execute(text("""
-            SELECT upload_id, collection, filename, timestamp, count
-            FROM upload_history
-            ORDER BY timestamp DESC
-        """))
+# @router.get("/get-upload_history")
+# def list_upload_history(collection: str = None, db: Session = Depends(get_pg_conn)):
+#     if collection:
+#         result = db.execute(text("""
+#             SELECT upload_id, collection, filename, timestamp, count
+#             FROM upload_history
+#             WHERE collection = :collection
+#             ORDER BY timestamp DESC
+#         """), {"collection": collection})
+#     else:
+#         result = db.execute(text("""
+#             SELECT upload_id, collection, filename, timestamp, count
+#             FROM upload_history
+#             ORDER BY timestamp DESC
+#         """))
 
-    uploads = [dict(row) for row in result.mappings().all()]
-    return {"upload_history": uploads}
+#     uploads = [dict(row) for row in result.mappings().all()]
+#     return {"upload_history": uploads}
 
-@router.delete("/delete_collections/{name}")
-def drop_collection(name: str, db: Session = Depends(get_pg_conn)):
-    if utility.has_collection(name):
-        utility.drop_collection(name)
-    db.execute(text("DELETE FROM upload_history WHERE collection = :name"), {"name": name})
-    db.execute(text("DELETE FROM collections WHERE name = :name"), {"name": name})
-    db.commit()
+# @router.delete("/delete_collections/{name}")
+# def drop_collection(name: str, db: Session = Depends(get_pg_conn)):
+#     if utility.has_collection(name):
+#         utility.drop_collection(name)
+#     db.execute(text("DELETE FROM upload_history WHERE collection = :name"), {"name": name})
+#     db.execute(text("DELETE FROM collections WHERE name = :name"), {"name": name})
+#     db.commit()
 
-    return {"status": "deleted", "collection": name}
+#     return {"status": "deleted", "collection": name}
 
-@router.delete("/delete_file/{upload_id}")
-def delete_uploaded_file(upload_id: str, db: Session = Depends(get_pg_conn)):
+# @router.delete("/delete_file/{upload_id}")
+# def delete_uploaded_file(upload_id: str, db: Session = Depends(get_pg_conn)):
 
-    result = db.execute(text("""
-        SELECT collection, filename FROM upload_history WHERE upload_id = :upload_id
-    """), {"upload_id": upload_id}).fetchone()
+#     result = db.execute(text("""
+#         SELECT collection, filename FROM upload_history WHERE upload_id = :upload_id
+#     """), {"upload_id": upload_id}).fetchone()
 
-    if not result:
-        raise HTTPException(status_code=404, detail="Upload not found")
+#     if not result:
+#         raise HTTPException(status_code=404, detail="Upload not found")
 
-    collection_name, filename = result
+#     collection_name, filename = result
 
-    if utility.has_collection(collection_name):
-            collection = Collection(collection_name)
-            collection.delete(expr=f"upload_id == '{upload_id}'")
+#     if utility.has_collection(collection_name):
+#             collection = Collection(collection_name)
+#             collection.delete(expr=f"upload_id == '{upload_id}'")
 
-    db.execute(text("DELETE FROM upload_history WHERE upload_id = :upload_id"), {"upload_id": upload_id})
-    db.commit()
+#     db.execute(text("DELETE FROM upload_history WHERE upload_id = :upload_id"), {"upload_id": upload_id})
+#     db.commit()
 
-    return {"status": "deleted", "upload_id": upload_id, "file": filename, "collection": collection_name}
+#     return {"status": "deleted", "upload_id": upload_id, "file": filename, "collection": collection_name}
 
-@router.post("/upload-file")
-async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), collection_name: str = Form("docs"), db: Session = Depends(get_pg_conn)):
-    suffix = ".pdf" if file_type == "pdf" else ".txt"
+# @router.post("/upload-file")
+# async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), collection_name: str = Form("docs"), db: Session = Depends(get_pg_conn)):
+#     suffix = ".pdf" if file_type == "pdf" else ".txt"
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+#         tmp.write(await file.read())
+#         tmp_path = tmp.name
 
-    if file_type == "pdf":
-        loader = PyPDFLoader(tmp_path)
-    elif file_type == "text":
-        loader = TextLoader(tmp_path, encoding="utf-8")
-    else:
-        os.remove(tmp_path)
-        return {"error": "Unsupported file_type"}
+#     if file_type == "pdf":
+#         loader = PyPDFLoader(tmp_path)
+#     elif file_type == "text":
+#         loader = TextLoader(tmp_path, encoding="utf-8")
+#     else:
+#         os.remove(tmp_path)
+#         return {"error": "Unsupported file_type"}
 
-    documents = loader.load()
-    os.remove(tmp_path)
+#     documents = loader.load()
+#     os.remove(tmp_path)
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=200)
-    chunks = splitter.split_documents(documents)
+#     splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=200)
+#     chunks = splitter.split_documents(documents)
 
-    upload_id = str(uuid.uuid4())
-    timestamp = datetime.now(timezone.utc)
+#     upload_id = str(uuid.uuid4())
+#     timestamp = datetime.now(timezone.utc)
 
-    for c in chunks:
-        c.metadata["upload_id"] = upload_id
-        c.metadata["filename"] = file.filename
+#     for c in chunks:
+#         c.metadata["upload_id"] = upload_id
+#         c.metadata["filename"] = file.filename
 
-    vectorstore = Milvus(
-        embedding_function=embedding_model,
-        collection_name=collection_name,
-        connection_args={"alias": "default"}
-    )
-    vectorstore.add_documents(chunks)
+#     vectorstore = Milvus(
+#         embedding_function=embedding_model,
+#         collection_name=collection_name,
+#         connection_args={"alias": "default"}
+#     )
+#     vectorstore.add_documents(chunks)
 
-    db.execute(text("""
-        INSERT INTO upload_history (upload_id, collection, filename, timestamp, count)
-        VALUES (:upload_id, :collection, :filename, :timestamp, :count)
-    """), {
-        "upload_id": upload_id,
-        "collection": collection_name,
-        "filename": file.filename,
-        "timestamp": timestamp,
-        "count": len(chunks)
-    })
+#     db.execute(text("""
+#         INSERT INTO upload_history (upload_id, collection, filename, timestamp, count)
+#         VALUES (:upload_id, :collection, :filename, :timestamp, :count)
+#     """), {
+#         "upload_id": upload_id,
+#         "collection": collection_name,
+#         "filename": file.filename,
+#         "timestamp": timestamp,
+#         "count": len(chunks)
+#     })
 
-    db.commit()
+#     db.commit()
 
-    return {
-        "status": "uploaded",
-        "upload_id": upload_id,
-        "file": file.filename,
-        "chunks": len(chunks)
-    }
+#     return {
+#         "status": "uploaded",
+#         "upload_id": upload_id,
+#         "file": file.filename,
+#         "chunks": len(chunks)
+#     }
 
 @router.get("/intents")
 def get_intent(db: Session = Depends(get_pg_conn)):
@@ -425,9 +423,14 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     messages.insert(1, SystemMessage(content=f"ระบบจับอารมณ์อัตโนมัติ: [SENTIMENT] {sentiment_content}"))
     messages.insert(2, SystemMessage(content=intent_prompt_template))
 
+    #================================================================================#
     agent = react_agent(llm, chosen_tools, system_prompt)
     result = await agent.ainvoke({"messages": messages})
-    final_result = result["messages"][-1].content
+    final_msg: AIMessage = result["messages"][-1]
+    final_result: str = final_msg.content
+    token_logprobs = extract_token_logprobs(final_msg)
+    cal_confidence_from_logprobs = cal_confidence(token_logprobs, drop_punct=True)
+    #================================================================================#
     
     state.update({
         "active_intent": intent_name,
@@ -447,12 +450,36 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
         "sentiment": sentiment,
         "intent": intent_name,
         "intent_score": float(score) if score else None,
-        "full_messages": result["messages"]
+        "logprobs_summary": {
+            "avg_prob": cal_confidence_from_logprobs["avg"],
+            "min_prob": cal_confidence_from_logprobs["min"],
+            "geom_prob": cal_confidence_from_logprobs["geom"],
+            "token_count_used": cal_confidence_from_logprobs["n_used"]
+        },
     }
 
 @app.get("/")
 async def health_check():
     return {"status": "healthy"}
+
+@app.get("/test-db")
+def test_both(pg: Session = Depends(get_pg_conn), maria: Session = Depends(get_maria_conn)):
+    out = {}
+    # PG
+    try:
+        ver = pg.execute(text("SELECT version()")).scalar()
+        out["postgres"] = {"ok": True, "version": ver}
+    except Exception as e:
+        out["postgres"] = {"ok": False, "error": str(e)}
+
+    # MariaDB
+    try:
+        ver = maria.execute(text("SELECT VERSION()")).scalar()
+        out["mariadb"] = {"ok": True, "version": ver}
+    except Exception as e:
+        out["mariadb"] = {"ok": False, "error": str(e)}
+
+    return out
 
 
 if __name__ == "__main__":
