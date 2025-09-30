@@ -1,0 +1,99 @@
+.container {
+  max-width: 640px;
+  margin: 32px auto;
+  padding: 0 12px;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+.title {
+  text-align: center;
+  margin-bottom: 16px;
+  font-size: 20px;
+}
+
+.chatBox {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px;
+  height: 420px;
+  overflow-y: auto;
+  background: #fafafa;
+}
+
+.msg {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  margin: 6px 0;
+  word-break: break-word;
+}
+
+.userMsg {
+  margin-left: auto;
+  background: #dbeafe;
+}
+
+.aiMsg {
+  margin-right: auto;
+  background: #f3f4f6;
+}
+
+.inputArea {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  outline: none;
+}
+
+.input:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+}
+
+.button {
+  padding: 8px 16px;
+  border: none;
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.md :where(p) {
+  margin: 0 0 6px 0;
+}
+.md :where(p:last-child) {
+  margin-bottom: 0;
+}
+.md :where(code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+  font-size: 0.92em;
+  background: #eef2ff;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.md :where(pre) {
+  margin: 6px 0 0;
+  padding: 10px;
+  background: #0f172a;
+  color: #e5e7eb;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.md :where(a) {
+  text-decoration: underline;
+}

@@ -1,9 +1,7 @@
-import re
 import numpy as np
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
-from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 
 # ===== Config =====
@@ -61,13 +59,10 @@ def match_intent_single(
     if not texts:
         return None, None, 0.0
 
-    # ใช้เฉพาะข้อความล่าสุด N อัน
     texts = texts[-MAX_CTX_UTTERANCES:]
 
-    # เข้ารหัสทั้งหมด (ได้เวกเตอร์ normalized)
+    # เข้ารหัสทั้งหมด
     vecs = intent_model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
-
-    # รวมแบบ recency-weighted mean (ใหม่สุดน้ำหนักมากสุด)
     if len(vecs) == 1:
         q = vecs[0]
     else:
@@ -77,12 +72,11 @@ def match_intent_single(
         if s > 0:
             weights = weights / s
         q = (vecs * weights[:, None]).sum(axis=0)
-        # re-normalize กันพลาด
         norm = np.linalg.norm(q)
         if norm > 0:
             q = q / norm
 
-    # เทียบกับ intent embeddings (ควร normalized แล้ว) → ใช้ dot = cosine
+    # เทียบกับ intent embeddings → ใช้ dot = cosine
     best_score, best_idx = -1.0, None
     for idx, item in enumerate(intent_data):
         s = float(np.dot(q, item["embedding"]))
@@ -113,7 +107,7 @@ def resolve_intent_with_context(
         if datetime.now(timezone.utc) - last > timedelta(minutes=SESSION_TIMEOUT_MIN):
             session_state.update({"active_intent": None, "status": "idle"})
 
-    # 1) หาผลผู้สมัคร (candidate)
+    # 1) หาผล candidate
     cand_intent, cand_tool, cand_score = match_intent_single(user_inputs, intent_data)
     active_intent = session_state.get("active_intent")
 
