@@ -27,13 +27,11 @@ def autoclose_inactive_sessions(db):
 
 
 def get_or_create_session(db, external_session_id: str | None):
-    """
-    สัญญาใหม่:
-    - ถ้ามี esid (uuid string จาก client) → ใช้ esid เป็น id ของแถวใน DB เสมอ
-      * ถ้าเจอแถว open → reuse
-      * ถ้าเจอแถว closed → re-open (รีเซ็ตเวลา/ตัวนับ) เพื่อคง uuid เดิม
-      * ถ้าไม่เจอเลย → insert ใหม่ด้วย id=esid และ external_session_id=esid
-    - ถ้าไม่มี esid → insert ใหม่ด้วย id สุ่มของ DB แล้ว external_session_id = id::text
+    """ 
+        ถ้าเจอแถว open → reuse 
+        ถ้าเจอแถว closed → re-open (รีเซ็ตเวลา/ตัวนับ) เพื่อคง uuid เดิม
+        ถ้าไม่เจอเลย → insert ใหม่ด้วย id=esid และ external_session_id=esid
+        ถ้าไม่มี esid → insert ใหม่ด้วย id สุ่มของ DB แล้ว external_session_id = id::text
     """
     esid = (external_session_id or "").strip() or None
 

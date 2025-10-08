@@ -43,7 +43,6 @@ def react_agent(llm : ChatOpenAI , tools : list, system_prompt : str | None = No
 
     async def call_model(state: ReactState):
         messages = state["messages"]
-        # print(messages)
         if system_prompt: 
             message = await model_with_tools.ainvoke([SystemMessage(content=system_prompt) , *messages]) 
         else:

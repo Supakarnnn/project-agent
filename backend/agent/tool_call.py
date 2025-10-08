@@ -12,16 +12,16 @@ dotenv.load_dotenv()
 MILVUS_HOST = os.getenv("MILVUS_HOST")
 MILVUS_PORT = os.getenv("MILVUS_PORT")
 MILVUS_PRODUCT_COLLECTION = os.getenv("MILVUS_PRODUCT_COLLECTION")
+MILVUS_PRODUCT_DETAIL_COLLECTION = os.getenv("MILVUS_PRODUCT_DETAIL_COLLECTION")
 
 @tool
-async def rag_search(query: str, min_price: Optional[int] = None, max_price: Optional[int] = None, item_type: Literal["any","product","promotion"] = "any") -> str:
+async def rag_search(query: str, min_price: Optional[int] = None, max_price: Optional[int] = None) -> str:
     """
-    ค้นหาสินค้านจาก Milvus คืนผลพร้อม score
+    ใช้สำหรับแนะนำหรือค้นหาสินค้านจาก Milvus (คืนผลพร้อม score)
     - query = ข้อความที่ต้องการค้นหา
     - min_price, max_price = ถ้ากำหนดจะกรองจาก metadata
-    - item_type = ถ้าผู้ใช้ถามหา "โปร/โปรโมชั่น/ส่วนลด/ซื้อ 1 แถม 1" ให้ตั้ง item_type="promotion"
     """
-    print(f"LLM uses rag_search: q={query}, min={min_price}, max={max_price}, type={item_type}")
+    print(f"LLM uses rag_search: q={query}, min={min_price}, max={max_price}")
     try:
         collection = MILVUS_PRODUCT_COLLECTION
         vectorstore = Milvus(
@@ -31,10 +31,8 @@ async def rag_search(query: str, min_price: Optional[int] = None, max_price: Opt
         )
 
         price = []
-        if min_price is not None: price.append(f"PricePerUnit >= {min_price}")
-        if max_price is not None: price.append(f"PricePerUnit <= {max_price}")
-        if item_type == "product": price.append(f"is_promotion == false")
-        elif item_type == "promotion": price.append(f"is_promotion == true")
+        if min_price is not None: price.append(f"cost >= {min_price}")
+        if max_price is not None: price.append(f"cost <= {max_price}")
         expr = " and ".join(price) if price else None
 
         k = 10
@@ -49,18 +47,71 @@ async def rag_search(query: str, min_price: Optional[int] = None, max_price: Opt
                 continue
 
             m = doc.metadata or {}
-            name = m.get("ProductName") or "(ไม่มีชื่อ)"
-            detail = m.get("ProductDetail") or ""
-            price = m.get("PricePerUnit")
-            stock = m.get("is_stock")
-            price_txt = f"{price:.0f} บาท" if isinstance(price, (int, float)) else "-"
-            stock_txt = "มีสต๊อก" if stock else "หมดสต๊อก"
-            lines.append(f"- {name} | {detail} | {price_txt} | {stock_txt} (similarity={sim:.2f})")
+            name = m.get("name") or "(ไม่มีชื่อ)"
+            name_eng = m.get("name_eng") or "(ไม่มีชื่อ)"
+            detail = m.get("detail") or ""
+            brand = m.get("brand")
+            category_l1 = m.get("category_l1")
+            category_l2 = m.get("category_l2")
+            key_features = m.get("key_features")
+            suitable_for_concern = m.get("suitable_for_concern")
+            size_volume = m.get("size_volume")
+            cost = m.get("cost")
+            lines.append(f"- {name} | {name_eng} | รายละเอียด: {detail} | แบรนด์: {brand} | หมวดหมู่:{category_l1},{category_l2} | จุดเด่น: {key_features} | ช่วยแก้ไข: {suitable_for_concern} | ขนาด: {size_volume} | ราคา:{cost} | (similarity={sim:.2f})")
 
         if not lines:
             return f"ไม่สิ้นค้าที่เกี่ยวข้องกับ {query}"
 
         output = "นี้คือข้อมูลที่ค้นเจอ **พิจารณาข้อมูลก่อนตอบเสมอและสรุปสิ้นค้าสั้น ๆ ให้ลูกค้า** :\n" + "\n".join(lines)
+        print(output)
+        return output
+
+    except Exception as e:
+        print(e)
+        return "เครื่องมือมีปัญหา"
+    
+@tool
+async def product_detail_search(name: str) -> str:
+    """
+    ค้นหา ข้อมูล, จุดเด่น, ส่วนผสม, ช่วยแก้ไข, การใช้งาน ของสิ้นค้าจากชื่อสิ้นค้า
+    - name = ชื่อสิ้นค้า (ภาษาไทย, Eng)
+    """
+    print(f"LLM uses product_detail_search: q={name}")
+    try:
+        collection = MILVUS_PRODUCT_DETAIL_COLLECTION
+        vectorstore = Milvus(
+            embedding_function=embedding_model,
+            collection_name=collection,
+            connection_args={"uri": f"http://{MILVUS_HOST}:{MILVUS_PORT}"},
+        )
+
+        k = 5
+        results = await vectorstore.asimilarity_search_with_score(name, k=k)
+        if not results:
+            return f"ไม่สิ้นค้าที่เกี่ยวข้องกับ {name}"
+
+        lines = []
+        for doc, dist in results:
+            sim = 1.0 - float(dist)
+            if sim < 0.2:
+                continue
+
+            m = doc.metadata or {}
+            name = m.get("name") or "(ไม่มีชื่อ)"
+            name_eng = m.get("name_eng") or "(ไม่มีชื่อ)"
+            detail = m.get("detail")
+            key_features = m.get("key_features")
+            key_ingredients = m.get("key_ingredients")
+            suitable_for_concern = m.get("suitable_for_concern")
+            usage_instructions = m.get("usage_instructions")
+            cost = m.get("cost")
+            notes = m.get("notes")
+            lines.append(f"- {name} | {name_eng} | ราคา: {cost}| รายละเอียด: {detail} | จุดเด่น: {key_features} | ส่วนผสม: {key_ingredients} | ช่วยแก้ปัญหา: {suitable_for_concern} | การใช้งาน: {usage_instructions} | หมายเหตุ: {notes} (similarity={sim:.2f})")
+
+        if not lines:
+            return f"ไม่สิ้นค้าที่เกี่ยวข้องกับ {name}"
+
+        output = "นี้คือข้อมูลที่ค้นเจอ **นำข้อมูลที่ค้นเจอตอบตามคำถามของลูกค้า** :\n" + "\n".join(lines)
         print(output)
         return output
 

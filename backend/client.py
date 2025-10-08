@@ -14,7 +14,7 @@ from agent.model import embedding_model, get_current_llm_setting
 from langchain_milvus import Milvus
 from connect_milvus import connect_milvus
 from pymilvus import FieldSchema, CollectionSchema, DataType, Collection, utility
-from agent.tool_call import get_registered_tools, track_order_tool, for_list_collections, rag_search, create_order, cancel_order
+from agent.tool_call import get_registered_tools, track_order_tool, for_list_collections, rag_search, create_order, cancel_order, product_detail_search
 from intents.intent_matcher import load_intents, resolve_intent_with_context, GLOBAL_MIN_CONFIDENCE
 from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now
@@ -386,9 +386,10 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
         "rag_search": rag_search,
         "create_order": create_order,
         "cancel_order": cancel_order,
+        "product_detail_search": product_detail_search
     }
 
-    chosen_tools = [tool_registry["rag_search"], tool_registry["for_list_collections"]]
+    chosen_tools = [tool_registry["rag_search"], tool_registry["product_detail_search"]]
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 
