@@ -1,25 +1,20 @@
 import asyncio, logging
-import os, tempfile, uuid
-from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from fastapi import Request, Depends, HTTPException, APIRouter, Header
-from fastapi import FastAPI, UploadFile, File, Form, Response
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from fastapi import FastAPI, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
-from agent.module import RequestMessage, CollectionCreate, ConfigUpdate, LoginIn, IntentCreate
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from agent.model import embedding_model, get_current_llm_setting
-from langchain_milvus import Milvus
-from connect_milvus import connect_milvus
-from pymilvus import FieldSchema, CollectionSchema, DataType, Collection, utility
-from agent.tool_call import get_registered_tools, track_order_tool, for_list_collections, rag_search, create_order, cancel_order, product_detail_search
-from intents.intent_matcher import load_intents, resolve_intent_with_context, GLOBAL_MIN_CONFIDENCE
+from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate
+from agent.model import get_current_llm_setting
+from connect_milvus import connect_milvus, collection_summary, primary_key_field
+from pymilvus import utility, Collection
+from agent.tool_call import get_registered_tools, track_order_tool, for_list_collections, product_search, create_order, cancel_order, product_detail_search, promotion_search
+from intents.intent_matcher import load_intents, resolve_intent_with_context
 from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now
 from sentiment_model.s_model import detect_sentiment
-from auth_admin.auth import verify_password,hash_password
+from auth_admin.auth import verify_password, hash_password
 from agent.confident_cal import extract_token_logprobs, cal_confidence
 from contextlib import asynccontextmanager, suppress
 from sqlalchemy.orm import Session
@@ -139,153 +134,6 @@ def test_llm(db: Session = Depends(get_pg_conn)):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# @router.post("/create_collections")
-# def create_collection(req: CollectionCreate, db: Session = Depends(get_pg_conn)):
-
-#     desc = req.description if req.description else f"Collection {req.name}"
-#     fields = [
-#         FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-#         FieldSchema(name="upload_id", dtype=DataType.VARCHAR, max_length=50),
-#         FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=req.dim),
-#         FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=5000),
-#     ]
-#     schema = CollectionSchema(fields, description=desc)
-#     Collection(name=req.name, schema=schema)
-
-#     result = db.execute(text("""
-#         INSERT INTO collections (name, dim, description, created_at)
-#         VALUES (:name, :dim, :desc, :created_at)
-#         RETURNING id
-#     """), {
-#         "name": req.name,
-#         "dim": req.dim,
-#         "desc": desc,
-#         "created_at": datetime.now(timezone.utc)
-#     })
-
-#     new_id = result.scalar()
-#     db.commit()
-
-#     return {"status": "success", "collection": req.name, "id": new_id, "description": desc}
-
-# @router.get("/get-collections")
-# def list_collections(db: Session = Depends(get_pg_conn)):
-#     result = db.execute(text("SELECT id, name, dim, description, created_at FROM collections ORDER BY created_at DESC"))
-#     collections = [dict(row) for row in result.mappings().all()]
-#     return {"collections": collections}
-
-# @router.get("/get-collections-ai")
-# def list_collections(db: Session = Depends(get_pg_conn)):
-#     result = db.execute(text("SELECT name, description FROM collections"))
-#     collections = [dict(row) for row in result.mappings().all()]
-#     return {"collections": collections}
-
-# @router.get("/get-upload_history")
-# def list_upload_history(collection: str = None, db: Session = Depends(get_pg_conn)):
-#     if collection:
-#         result = db.execute(text("""
-#             SELECT upload_id, collection, filename, timestamp, count
-#             FROM upload_history
-#             WHERE collection = :collection
-#             ORDER BY timestamp DESC
-#         """), {"collection": collection})
-#     else:
-#         result = db.execute(text("""
-#             SELECT upload_id, collection, filename, timestamp, count
-#             FROM upload_history
-#             ORDER BY timestamp DESC
-#         """))
-
-#     uploads = [dict(row) for row in result.mappings().all()]
-#     return {"upload_history": uploads}
-
-# @router.delete("/delete_collections/{name}")
-# def drop_collection(name: str, db: Session = Depends(get_pg_conn)):
-#     if utility.has_collection(name):
-#         utility.drop_collection(name)
-#     db.execute(text("DELETE FROM upload_history WHERE collection = :name"), {"name": name})
-#     db.execute(text("DELETE FROM collections WHERE name = :name"), {"name": name})
-#     db.commit()
-
-#     return {"status": "deleted", "collection": name}
-
-# @router.delete("/delete_file/{upload_id}")
-# def delete_uploaded_file(upload_id: str, db: Session = Depends(get_pg_conn)):
-
-#     result = db.execute(text("""
-#         SELECT collection, filename FROM upload_history WHERE upload_id = :upload_id
-#     """), {"upload_id": upload_id}).fetchone()
-
-#     if not result:
-#         raise HTTPException(status_code=404, detail="Upload not found")
-
-#     collection_name, filename = result
-
-#     if utility.has_collection(collection_name):
-#             collection = Collection(collection_name)
-#             collection.delete(expr=f"upload_id == '{upload_id}'")
-
-#     db.execute(text("DELETE FROM upload_history WHERE upload_id = :upload_id"), {"upload_id": upload_id})
-#     db.commit()
-
-#     return {"status": "deleted", "upload_id": upload_id, "file": filename, "collection": collection_name}
-
-# @router.post("/upload-file")
-# async def upload_file(file: UploadFile = File(...), file_type: str = Form(...), collection_name: str = Form("docs"), db: Session = Depends(get_pg_conn)):
-#     suffix = ".pdf" if file_type == "pdf" else ".txt"
-
-#     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-#         tmp.write(await file.read())
-#         tmp_path = tmp.name
-
-#     if file_type == "pdf":
-#         loader = PyPDFLoader(tmp_path)
-#     elif file_type == "text":
-#         loader = TextLoader(tmp_path, encoding="utf-8")
-#     else:
-#         os.remove(tmp_path)
-#         return {"error": "Unsupported file_type"}
-
-#     documents = loader.load()
-#     os.remove(tmp_path)
-
-#     splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=200)
-#     chunks = splitter.split_documents(documents)
-
-#     upload_id = str(uuid.uuid4())
-#     timestamp = datetime.now(timezone.utc)
-
-#     for c in chunks:
-#         c.metadata["upload_id"] = upload_id
-#         c.metadata["filename"] = file.filename
-
-#     vectorstore = Milvus(
-#         embedding_function=embedding_model,
-#         collection_name=collection_name,
-#         connection_args={"alias": "default"}
-#     )
-#     vectorstore.add_documents(chunks)
-
-#     db.execute(text("""
-#         INSERT INTO upload_history (upload_id, collection, filename, timestamp, count)
-#         VALUES (:upload_id, :collection, :filename, :timestamp, :count)
-#     """), {
-#         "upload_id": upload_id,
-#         "collection": collection_name,
-#         "filename": file.filename,
-#         "timestamp": timestamp,
-#         "count": len(chunks)
-#     })
-
-#     db.commit()
-
-#     return {
-#         "status": "uploaded",
-#         "upload_id": upload_id,
-#         "file": file.filename,
-#         "chunks": len(chunks)
-#     }
-
 @router.get("/intents")
 def get_intent(db: Session = Depends(get_pg_conn)):
     res = db.execute(text("SELECT intent_id, name, description, tool_name FROM intents")).mappings().all()
@@ -349,6 +197,63 @@ def create_training_phrases(intent_id: int, phrase: str, db: Session = Depends(g
 async def tools_in_server():
     return {"available_tools": get_registered_tools()}
 
+@router.get("/collections")
+def list_collections():
+    connect_milvus()
+    try:
+        cols = utility.list_collections()
+        return {"collections": cols}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    
+@router.get("/collections/{name}")
+def get_collection_summary(name: str):
+    """สรุปข้อมูลของ collection นั้น (schema, indexes, partitions, loaded, num_entities)"""
+    connect_milvus()
+    try:
+        if not utility.has_collection(name):
+            raise HTTPException(404, f"Collection '{name}' not found")
+        return collection_summary(name)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"get_collection_summary error: {e}")
+    
+@router.get("/collections/{name}/rows")
+def get_collection_rows(name: str, page: int = 1, page_size: int = 20):
+    connect_milvus()
+    if not utility.has_collection(name):
+        raise HTTPException(404, f"Collection '{name}' not found")
+
+    c = Collection(name)
+    try:
+        c.load()
+    except Exception:
+        pass
+
+    expr = 'pk != ""'
+
+    rows = c.query(
+        expr=expr,
+        output_fields=[f.name for f in c.schema.fields],
+        limit=page_size,
+        offset=(page - 1) * page_size,
+    )
+
+    for r in rows:
+        v = r.get("vector")
+        if isinstance(v, (list, tuple)):
+            r["vector_len"] = len(v)
+            r["vector"] = list(v[:5])
+
+    return {
+        "collection": name,
+        "page": page,
+        "page_size": page_size,
+        "total": c.num_entities,
+        "rows": rows,
+    }
+ 
 app.include_router(router)
 
 @app.post("/chat")
@@ -383,13 +288,14 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     tool_registry = {
         "for_list_collections": for_list_collections,
         "track_order_tool": track_order_tool,
-        "rag_search": rag_search,
         "create_order": create_order,
         "cancel_order": cancel_order,
-        "product_detail_search": product_detail_search
+        "product_search": product_search,
+        "product_detail_search": product_detail_search,
+        "promotion_search": promotion_search
     }
 
-    chosen_tools = [tool_registry["rag_search"], tool_registry["product_detail_search"]]
+    chosen_tools = [tool_registry["product_search"], tool_registry["product_detail_search"], tool_registry["promotion_search"]]
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 
@@ -403,9 +309,8 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
 
     intent_prompt_template = f"""[INTENT] {intent_name or 'None'} (confidence={score:.2f}) [ALLOWED_TOOLS] {tool_names}
     [BEHAVIOR RULES]
-    - คุณสามารถใช้เฉพาะเครื่องมือในรายการที่อนุญาต (Allowed Tools) เท่านั้น
     - หากตรวจจับได้ว่าเป็นงานเฉพาะ ควรพิจารณาใช้เครื่องมือเฉพาะทางก่อน
-    - หากเป็นคำถามทั่วไปหรือยังไม่ชัดเจน ให้ใช้ rag_search หรือถามย้ำเพื่อให้ชัดเจนก่อน
+    - หากเป็นคำถามทั่วไปหรือยังไม่ชัดเจน ให้ใช้ เครื่องมืออื่น หรือ ถามย้ำเพื่อให้ชัดเจนก่อน
     - หากข้อมูลไม่พอ ให้ถามลูกค้าอย่างสั้น กระชับ และเฉพาะเจาะจงก่อนเรียกใช้เครื่องมือ
     - หลีกเลี่ยงการเดาข้อมูล หากไม่แน่ใจต้องถามย้ำด้วยถ้อยคำสุภาพ
     """.strip()

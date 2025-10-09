@@ -190,6 +190,84 @@ def ingest_detail_product(batch_size: int = BATCH_SIZE) -> int:
     return total
 
 
+def promotion_get_vectorstore() -> Milvus:
+    conn_args = {"uri": MILVUS_URL}
+    return Milvus(
+        embedding_function=embedding_model,
+        collection_name=MILVUS_PROMOTION_COLLECTION,
+        connection_args=conn_args,
+    )
+
+def fetch_promotion_batch(db: Session, limit=1000, offset=0) -> List[Dict[str, Any]]:
+    q = text("""
+        SELECT
+            id,
+            code,
+            ProductName,
+            ProductName_Eng,
+            ProductDetail,
+            PricePerUnit
+        FROM tbl_product 
+        WHERE code LIKE 'PT%'
+        ORDER BY id
+        LIMIT :limit OFFSET :offset
+    """)
+    return [dict(r) for r in db.execute(q, {"limit": limit, "offset": offset}).mappings().all()]
+
+def build_promotio_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
+    
+    return {
+        "id": str(row["id"]),
+        "code": row.get("code"),
+        "ProductName": row.get("ProductName"),
+        "ProductName_Eng": row.get("ProductName_Eng"),
+        "ProductDetail": row.get("ProductDetail"),
+        "PricePerUnit": float(row.get("PricePerUnit") or 0),
+        "raw": json.dumps(row, ensure_ascii=False),
+    }
+
+def build_promotion_text(row: Dict[str, Any]) -> str:
+    """ build for rag"""
+    def s(x): return "" if x is None else str(x).strip()
+    return "\n".join([
+        f"ชื่อ: {s(row.get('ProductName'))}",
+        f"ชื่ออังกฤษ: {s(row.get('ProductName_Eng'))}",
+        f"รายละเอียด: {s(row.get('ProductDetail'))}",
+    ])
+
+def upsert_rows_promotion(vs: Milvus, rows: List[Dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+
+    texts = [build_promotion_text(r) for r in rows]
+    metadatas = [build_promotio_metadata(r) for r in rows]
+    ids = [str(r["id"]) for r in rows]
+
+    try:
+        vs.delete(ids)
+    except Exception as e:
+        print(f"[Milvus] delete skip: {e}")
+    vs.add_texts(texts=texts, metadatas=metadatas, ids=ids)
+    return len(rows)
+
+def ingest_promotion_product(batch_size: int = BATCH_SIZE) -> int:
+    total = 0
+    vs = promotion_get_vectorstore()
+    db = get_maria_session()
+    try:
+        offset = 0
+        while True:
+            chunk = fetch_promotion_batch(db, limit=batch_size, offset=offset)
+            if not chunk:
+                break
+            total += upsert_rows_promotion(vs, chunk)
+            offset += batch_size
+            print(f"Inserted {total}")
+    finally:
+        db.close()
+    return total
+
+
 if __name__ == "__main__":
-    n = ingest_detail_product()
-    print(f"Done. Inserted {n} products into Milvus collection '{MILVUS_PRODUCT_DETAIL_COLLECTION}'.")
+    n = ingest_promotion_product()
+    print(f"Done. Inserted {n} products into Milvus collection '{MILVUS_PROMOTION_COLLECTION}'.")

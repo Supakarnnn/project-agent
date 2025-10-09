@@ -13,9 +13,10 @@ MILVUS_HOST = os.getenv("MILVUS_HOST")
 MILVUS_PORT = os.getenv("MILVUS_PORT")
 MILVUS_PRODUCT_COLLECTION = os.getenv("MILVUS_PRODUCT_COLLECTION")
 MILVUS_PRODUCT_DETAIL_COLLECTION = os.getenv("MILVUS_PRODUCT_DETAIL_COLLECTION")
+MILVUS_PROMOTION_COLLECTION = os.getenv("MILVUS_PROMOTION_COLLECTION")
 
 @tool
-async def rag_search(query: str, min_price: Optional[int] = None, max_price: Optional[int] = None) -> str:
+async def product_search(query: str, min_price: Optional[int] = None, max_price: Optional[int] = None) -> str:
     """
     ใช้สำหรับแนะนำหรือค้นหาสินค้านจาก Milvus (คืนผลพร้อม score)
     - query = ข้อความที่ต้องการค้นหา
@@ -119,6 +120,50 @@ async def product_detail_search(name: str) -> str:
         print(e)
         return "เครื่องมือมีปัญหา"
 
+@tool
+async def promotion_search(query: str) -> str:
+    """
+    ค้นหา โปรโมชั่นที่จัดอยู่ของร้าน
+    - name = ข้อความที่ต้องการค้นหาหรือข้อมูลที่ต้องการค้นหา
+    """
+    print(f"LLM uses promotion_search: q={query}")
+    try:
+        collection = MILVUS_PROMOTION_COLLECTION
+        vectorstore = Milvus(
+            embedding_function=embedding_model,
+            collection_name=collection,
+            connection_args={"uri": f"http://{MILVUS_HOST}:{MILVUS_PORT}"},
+        )
+
+        k = 5
+        results = await vectorstore.asimilarity_search_with_score(query, k=k)
+        if not results:
+            return f"ไม่สิ้นค้าที่เกี่ยวข้องกับ {query}"
+
+        lines = []
+        for doc, dist in results:
+            sim = 1.0 - float(dist)
+            if sim < 0.05:
+                continue
+
+            m = doc.metadata or {}
+            name = m.get("ProductName") or "(ไม่มีชื่อ)"
+            name_eng = m.get("ProductName_Eng") or "(ไม่มีชื่อ)"
+            detail = m.get("ProductDetail")
+            cost = m.get("PricePerUnit")
+            lines.append(f"- {name} | {name_eng} | ราคา: {cost}| รายละเอียด: {detail} (similarity={sim:.2f})")
+
+        if not lines:
+            return f"ไม่โปรโมชั่นที่เกี่ยวข้องกับ {query}"
+
+        output = "นี้คือข้อมูลที่ค้นเจอ **นำข้อมูลที่ค้นเจอตอบตามคำถามของลูกค้า** :\n" + "\n".join(lines)
+        print(output)
+        return output
+
+    except Exception as e:
+        print(e)
+        return "เครื่องมือมีปัญหา"
+    
 @tool
 def for_list_collections():
     """เครื่องมือสำหรับดูข้อมูล collection ใน Milvus Vector Database ผ่าน API"""
