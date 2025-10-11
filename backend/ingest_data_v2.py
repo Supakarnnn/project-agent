@@ -268,6 +268,6 @@ def ingest_promotion_product(batch_size: int = BATCH_SIZE) -> int:
     return total
 
 
-if __name__ == "__main__":
-    n = ingest_promotion_product()
-    print(f"Done. Inserted {n} products into Milvus collection '{MILVUS_PROMOTION_COLLECTION}'.")
+# if __name__ == "__main__":
+#     n = ingest_promotion_product()
+#     print(f"Done. Inserted {n} products into Milvus collection '{MILVUS_PROMOTION_COLLECTION}'.")

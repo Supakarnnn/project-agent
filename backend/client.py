@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
 from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate
 from agent.model import get_current_llm_setting
-from connect_milvus import connect_milvus, collection_summary, primary_key_field
+from connect_milvus import connect_milvus
 from pymilvus import utility, Collection
 from agent.tool_call import get_registered_tools, track_order_tool, for_list_collections, product_search, create_order, cancel_order, product_detail_search, promotion_search
 from intents.intent_matcher import load_intents, resolve_intent_with_context
@@ -16,6 +16,9 @@ from log_func.session import autoclose_inactive_sessions, get_or_create_session,
 from sentiment_model.s_model import detect_sentiment
 from auth_admin.auth import verify_password, hash_password
 from agent.confident_cal import extract_token_logprobs, cal_confidence
+import threading
+from starlette.concurrency import run_in_threadpool
+from ingest_data_v2 import ingest_promotion_product, ingest_all_product, ingest_detail_product
 from contextlib import asynccontextmanager, suppress
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -28,6 +31,7 @@ import dotenv
 dotenv.load_dotenv()
 
 AUTO_CLOSE_EVERY_SEC = 60
+_ingest_lock = threading.Lock()
 async def _auto_close_loop(app):
     while True:
         try:
@@ -205,20 +209,7 @@ def list_collections():
         return {"collections": cols}
     except Exception as e:
         return {"status": "error", "message": str(e)}
-    
-@router.get("/collections/{name}")
-def get_collection_summary(name: str):
-    """สรุปข้อมูลของ collection นั้น (schema, indexes, partitions, loaded, num_entities)"""
-    connect_milvus()
-    try:
-        if not utility.has_collection(name):
-            raise HTTPException(404, f"Collection '{name}' not found")
-        return collection_summary(name)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"get_collection_summary error: {e}")
-    
+        
 @router.get("/collections/{name}/rows")
 def get_collection_rows(name: str, page: int = 1, page_size: int = 20):
     connect_milvus()
@@ -233,9 +224,13 @@ def get_collection_rows(name: str, page: int = 1, page_size: int = 20):
 
     expr = 'pk != ""'
 
+    all_fields = [f.name for f in c.schema.fields]
+    exclude = {"raw", "vector"}
+    output_fields = [f for f in all_fields if f not in exclude]
+
     rows = c.query(
         expr=expr,
-        output_fields=[f.name for f in c.schema.fields],
+        output_fields=output_fields,
         limit=page_size,
         offset=(page - 1) * page_size,
     )
@@ -253,7 +248,40 @@ def get_collection_rows(name: str, page: int = 1, page_size: int = 20):
         "total": c.num_entities,
         "rows": rows,
     }
- 
+
+@router.post("/ingest_promotion")
+def ingest_promotion():
+    acquired = _ingest_lock.acquire(blocking=False)
+    if not acquired:
+        raise HTTPException(status_code=409, detail="Ingestion is already running")
+    try:
+        n = ingest_promotion_product()
+        return {"response":"sucess","update": n + "item"}
+    except Exception as e:
+        raise e
+    
+@router.post("/ingest_product")
+def ingest_product():
+    acquired = _ingest_lock.acquire(blocking=False)
+    if not acquired:
+        raise HTTPException(status_code=409, detail="Ingestion is already running")
+    try:
+        n = ingest_all_product()
+        return {"response":"sucess","update": n + "item"}
+    except Exception as e:
+        raise e
+    
+@router.post("/ingest_detail")
+def ingest_datail():
+    acquired = _ingest_lock.acquire(blocking=False)
+    if not acquired:
+        raise HTTPException(status_code=409, detail="Ingestion is already running")
+    try:
+        n = ingest_detail_product()
+        return {"response":"sucess","update": n + "item"}
+    except Exception as e:
+        raise e
+    
 app.include_router(router)
 
 @app.post("/chat")
