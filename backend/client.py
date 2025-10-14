@@ -1,4 +1,5 @@
 import asyncio, logging
+import torch
 from typing import Any, Dict, List, Optional
 from fastapi import Request, Depends, HTTPException, APIRouter, Header
 from fastapi import FastAPI, Response, Query
@@ -8,7 +9,7 @@ from agent.react import react_agent
 from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate
 from agent.model import get_current_llm_setting
 from connect_milvus import connect_milvus
-from pymilvus import utility, Collection
+from pymilvus import utility, Collection, connections
 from agent.tool_call import get_registered_tools, track_order_tool, for_list_collections, product_search, create_order, cancel_order, product_detail_search, promotion_search
 from intents.intent_matcher import load_intents, resolve_intent_with_context
 from intents.runtime import get_session_state, save_session_state
@@ -412,6 +413,33 @@ def test_both(pg: Session = Depends(get_pg_conn), maria: Session = Depends(get_m
         out["mariadb"] = {"ok": True, "version": ver}
     except Exception as e:
         out["mariadb"] = {"ok": False, "error": str(e)}
+
+    # GPU
+    try:
+        if torch.cuda.is_available():
+            out["gpu"] = {
+                "ok": True,
+                "device_count": torch.cuda.device_count(),
+                "name": torch.cuda.get_device_name(0),
+                "torch_version": torch.__version__,
+            }
+        else:
+            out["gpu"] = {"ok": False, "error": "CUDA not available"}
+    except Exception as e:
+        out["gpu"] = {"ok": False, "error": str(e)}
+
+    # Milvus
+    try:
+        connect_milvus()
+        cols = utility.list_collections()
+        out["milvus"] = {"ok": True, "collections": cols[:5]}
+    except Exception as e:
+        out["milvus"] = {"ok": False, "error": str(e)}
+    finally:
+        try:
+            connections.disconnect("default")
+        except Exception:
+            pass
 
     return out
 

@@ -19,5 +19,7 @@ psycopg2-binary==2.9.10
 passlib==1.7.4
 bcrypt==3.2.2
 PyMySQL==1.1.2
+torch 
+torchvision
 
 # pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu128
