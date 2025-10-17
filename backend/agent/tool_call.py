@@ -1,6 +1,6 @@
 import os
 import inspect
-from typing import Optional, Literal
+from typing import Optional
 from langchain.tools import tool
 from agent.model import embedding_model
 from langchain_milvus import Milvus

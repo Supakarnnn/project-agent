@@ -3,6 +3,7 @@ from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 from sentence_transformers import SentenceTransformer
+from agent.model import embedding_model
 
 # ===== Config =====
 GLOBAL_MIN_CONFIDENCE = 0.65
@@ -12,7 +13,7 @@ SESSION_TIMEOUT_MIN = 15
 MAX_CTX_UTTERANCES = 5
 RECENCY_ALPHA = 0.70
 
-intent_model = SentenceTransformer("BAAI/bge-m3")
+intent_model = embedding_model
 
 def load_intents(db) -> List[Dict]:
     intents = db.execute(text("""
@@ -31,11 +32,8 @@ def load_intents(db) -> List[Dict]:
         if not phrases:
             continue
 
-        vecs = intent_model.encode(
-            phrases,
-            normalize_embeddings=True,
-            convert_to_numpy=True
-        )
+        list_of_vectors = intent_model.embed_documents(phrases)
+        vecs = np.array(list_of_vectors)
         intent_vec = np.mean(vecs, axis=0)
         out.append({
             "intent": it["name"],
@@ -62,7 +60,9 @@ def match_intent_single(
     texts = texts[-MAX_CTX_UTTERANCES:]
 
     # เข้ารหัสทั้งหมด
-    vecs = intent_model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
+    list_of_vectors = intent_model.embed_documents(texts)
+    vecs = np.array(list_of_vectors)
+    vecs = np.array(list_of_vectors)
     if len(vecs) == 1:
         q = vecs[0]
     else:
@@ -126,7 +126,8 @@ def resolve_intent_with_context(
     texts = [t.strip() for t in (user_inputs or []) if isinstance(t, str) and t.strip()]
     if texts:
         texts = texts[-MAX_CTX_UTTERANCES:]
-        vecs = intent_model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
+        list_of_vectors = intent_model.embed_documents(texts)
+        vecs = np.array(list_of_vectors)
         if len(vecs) == 1:
             q = vecs[0]
         else:

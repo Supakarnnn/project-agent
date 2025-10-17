@@ -1,6 +1,7 @@
 import os
 import torch
 import dotenv
+from langchain_community.embeddings import DeepInfraEmbeddings
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from langchain_openai import ChatOpenAI
@@ -21,11 +22,17 @@ def get_current_llm_setting(db: Session):
     )
     return llm, config["system_prompt"]
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-embedding_model = HuggingFaceEmbeddings(
-    model_name="BAAI/bge-m3",
-    model_kwargs={"device": device},
-    encode_kwargs={"normalize_embeddings": True},
+# device = "cuda" if torch.cuda.is_available() else "cpu"
+# embedding_model = HuggingFaceEmbeddings(
+#     model_name="BAAI/bge-m3",
+#     model_kwargs={"device": device},
+#     encode_kwargs={"normalize_embeddings": True},
+# )
+
+embedding_model = DeepInfraEmbeddings(
+    deepinfra_api_token=os.environ.get("DEEPINFRA_KEY"),
+    model_id="BAAI/bge-m3",
+    normalize=True
 )
 
 Base = declarative_base()

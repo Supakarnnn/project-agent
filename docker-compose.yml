@@ -1,10 +1,35 @@
 services:
-  # Service สำหรับ PostgreSQL database ใช้เก็บข้อมูลเชิง relational
+  # ===============================
+  # BACKEND SERVICE
+  # ===============================
+  backend:
+    build: ./backend
+    container_name: backend
+    env_file: ./backend/.env
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    command: >
+      uvicorn client:app
+      --host 0.0.0.0
+      --port 8001
+      --workers 1
+      --timeout-keep-alive 30
+    depends_on:
+      postgres:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    networks:
+      - milvus-network
+
+  # ===============================
+  # POSTGRES DATABASE
+  # ===============================
   postgres:
     image: postgres:16
     container_name: postgres
     restart: unless-stopped
-    # env_file: ./.env
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=1234
@@ -13,48 +38,70 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d appdb"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - milvus-network
 
-  # Service สำหรับ etcd ซึ่งเป็น distributed key-value store สำหรับเก็บข้อมูลเกี่ยวกับการ configuration
+  # ===============================
+  # ETCD (Milvus dependency)
+  # ===============================
   etcd:
     container_name: milvus-etcd
-    image: quay.io/coreos/etcd:v3.5.5
+    image: quay.io/coreos/etcd:v3.5.18
+    restart: unless-stopped
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
       - ETCD_AUTO_COMPACTION_RETENTION=1000
       - ETCD_QUOTA_BACKEND_BYTES=4294967296
       - ETCD_SNAPSHOT_COUNT=50000
     volumes:
-      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
-    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+      - etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://0.0.0.0:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
       interval: 30s
       timeout: 20s
       retries: 3
+      start_period: 30s
+    networks:
+      - milvus-network
 
-  # Service สำหรับ Minio ใช้สำหรับ object storage ที่เข้ากันได้กับ Amazon S3 API
+  # ===============================
+  # MINIO (Milvus dependency)
+  # ===============================
   minio:
     container_name: milvus-minio
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    restart: unless-stopped
     environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9001:9001"  # พอร์ตสำหรับ Minio console
-      - "9000:9000"  # พอร์ตหลักสำหรับ Minio
+      - "9001:9001"
+      - "9000:9000"
     volumes:
-      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
-    command: minio server /minio_data --console-address ":9001"
+      - minio_data:/data
+    command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
-      retries: 3
+      retries: 5
+      start_period: 60s
+    networks:
+      - milvus-network
 
-  # Service สำหรับ Milvus ที่ทำงานในโหมด standalone สำหรับการจัดการ vector similarity search
-  standalone:
+  # ===============================
+  # MILVUS STANDALONE
+  # ===============================
+  milvus:
     container_name: milvus-standalone
-    image: milvusdb/milvus:v2.4.6
+    image: milvusdb/milvus:v2.6.0
+    restart: unless-stopped
     command: ["milvus", "run", "standalone"]
     security_opt:
       - seccomp:unconfined
@@ -62,7 +109,7 @@ services:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
     volumes:
-      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+      - milvus_data:/var/lib/milvus
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s
@@ -70,23 +117,36 @@ services:
       timeout: 20s
       retries: 3
     ports:
-      - "19530:19530"  # พอร์ตหลักของ Milvus สำหรับ API
-      - "9091:9091"    # พอร์ตสำหรับตรวจสอบสถานะ health
+      - "443:19530"
+      - "9091:9091"
     depends_on:
-      - "etcd"
-      - "minio"
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - milvus-network
 
-  # Service สำหรับดูข้อมูลใน Milvus โดยใช้ Attu GUI
-  attu:
-    image: zilliz/attu:v2.2.6
-    container_name: attu
-    ports:
-      - "3000:3000"
-    environment:
-      MILVUS_URL: "milvus-standalone:19530"
-
+# ===============================
+# VOLUMES
+# ===============================
 volumes:
   pg_data:
-  etcd:
-  minio:
-  milvus:
+    driver: local
+  etcd_data:
+    driver: local
+  minio_data:
+    driver: local
+  milvus_data:
+    driver: local
+
+# ===============================
+# NETWORKS
+# ===============================
+networks:
+  milvus-network:
+    driver: bridge
+    name: milvus-post
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
