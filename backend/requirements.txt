@@ -1,0 +1,25 @@
+langchain-openai==0.3.28
+langchain==0.3.27
+langchain-community==0.3.27
+langchain_huggingface==0.3.1
+sentence-transformers==5.0.0
+fastapi
+langgraph==0.5.4
+langchain-cli==0.0.36
+pypdf==5.8.0
+pymilvus==2.5.14
+langchain_milvus==0.2.1
+transformers==4.53.3
+pythainlp==5.1.2
+pdfplumber==0.11.7
+beautifulsoup4==4.13.4
+python-multipart==0.0.20
+SQLAlchemy==2.0.42
+psycopg2-binary==2.9.10
+passlib==1.7.4
+bcrypt==3.2.2
+PyMySQL==1.1.2
+torch 
+torchvision
+
+# pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu128

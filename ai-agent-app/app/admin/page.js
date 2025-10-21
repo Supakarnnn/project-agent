@@ -1,7 +1,7 @@
 "use client";
 
-import Navbar from "./component/nav";
-import { LogoutButton } from "./component/logout";
+import Navbar from "./Component/nav";
+import { LogoutButton } from "./Component/logout";
 import styles from "./page.module.css";
 
 export default function Home() {
