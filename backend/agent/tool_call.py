@@ -22,7 +22,7 @@ async def product_search(query: str, min_price: Optional[int] = None, max_price:
     - query = ข้อความที่ต้องการค้นหา
     - min_price, max_price = ถ้ากำหนดจะกรองจาก metadata
     """
-    print(f"LLM uses rag_search: q={query}, min={min_price}, max={max_price}")
+    print(f"LLM uses product_search: q={query}, min={min_price}, max={max_price}")
     try:
         collection = MILVUS_PRODUCT_COLLECTION
         vectorstore = Milvus(
@@ -184,9 +184,12 @@ def track_order_tool(order_id: str) -> str:
     return f"สถานะของออเดอร์ {order_id} คือ: กำลังจัดส่ง"
 
 @tool
-def create_order():
-    """เครื่องมือสำหรับสร้างคำสั่งซื้อสิ้นค้า"""
-    print("LLM is trying to use create_order")
+def create_order(name: str) -> str:
+    """เครื่องมือสำหรับสร้างคำสั่งซื้อสิ้นค้า
+    - name = ชื่อสิ้นค้าที่ต้องการเปิดตำสั่งซื้อ
+    """
+    print(f"LLM is trying to use create_order: name={name}")
+    
     return "ระบบยังไม่พร้อม"
 
 @tool

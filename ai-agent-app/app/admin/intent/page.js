@@ -26,7 +26,6 @@ export default function Home() {
   const [showDel, setShowDel] = useState(false);
   const [delId, setDelId] = useState("");
 
-  // NEW: state สำหรับ Add Training Phrases
   const [showAddTP, setShowAddTP] = useState(false);
   const [tpIntentId, setTpIntentId] = useState("");
   const [tpText, setTpText] = useState("");
@@ -114,7 +113,7 @@ export default function Home() {
     showDel ? delDlgRef.current.showModal() : delDlgRef.current.close();
   }, [showDel]);
 
-  // NEW: dialog ref สำหรับ Add Training Phrases
+  //Add Training Phrases
   const addTPDlgRef = useRef(null);
   useEffect(() => {
     if (!addTPDlgRef.current) return;
@@ -185,7 +184,6 @@ export default function Home() {
       return;
     }
 
-    // แตกบรรทัดและคัดเฉพาะที่ไม่ว่าง
     const lines = tpText
       .split("\n")
       .map((s) => s.trim())
@@ -213,7 +211,6 @@ export default function Home() {
           credentials: "include",
         });
 
-        // backend ของคุณคืน {"tp_id", "intent_id", "phrase"} หรือข้อความ error
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok || !data || typeof data !== "object" || data.tp_id == null) {
           failCount += 1;
@@ -225,9 +222,7 @@ export default function Home() {
       }
     }
 
-    // อัปเดต state ของตาราง phrase ด้วยรายการที่สร้างสำเร็จ
     if (createdRows.length > 0) {
-      // รูปแบบตารางคาดว่า: { tp_id, intent_id, phrase }
       setPhrase((prev) => [...createdRows, ...prev]);
     }
 
@@ -240,7 +235,6 @@ export default function Home() {
     if (failCount > 0) {
       setTpErr(`เพิ่มสำเร็จ ${createdRows.length} บรรทัด / ล้มเหลว ${failCount} บรรทัด`);
     } else {
-      // สำเร็จทั้งหมด → ปิด dialog และเคลียร์ฟอร์ม
       setShowAddTP(false);
       setTpIntentId("");
       setTpText("");
@@ -264,7 +258,7 @@ export default function Home() {
             <thead>
               <tr>
                 <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Tool name</th>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Parameter</th>
+                {/* <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Parameter</th> */}
                 <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Description</th>
               </tr>
             </thead>
@@ -272,7 +266,7 @@ export default function Home() {
               {Object.entries(tools).map(([name, info]) => (
                 <tr key={name}>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{name}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{info.parameter}</td>
+                  {/* <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{info.parameter}</td> */}
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{info.description}</td>
                 </tr>
               ))}
@@ -497,8 +491,8 @@ export default function Home() {
           <table style={{ marginTop: 8, borderCollapse: "collapse", width: "100%" }}>
             <thead>
               <tr>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>tp_id</th>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>intent_id</th>
+                {/* <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>tp_id</th>
+                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>intent_id</th> */}
                 <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>tool_name</th>
                 <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Phrase</th>
               </tr>
@@ -513,8 +507,8 @@ export default function Home() {
               ) : (
                 phrase.map((it) => (
                   <tr key={it.tp_id}>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.tp_id}</td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.intent_id}</td>
+                    {/* <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.tp_id}</td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.intent_id}</td> */}
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
                       {toolByIntentId[it.intent_id] || "-"}
                     </td>

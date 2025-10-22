@@ -17,13 +17,13 @@ from log_func.session import autoclose_inactive_sessions, get_or_create_session,
 from sentiment_model.s_model import detect_sentiment
 from auth_admin.auth import verify_password, hash_password
 from agent.confident_cal import extract_token_logprobs, cal_confidence
-import threading
 from starlette.concurrency import run_in_threadpool
 from ingest_data_v2 import ingest_promotion_product, ingest_all_product, ingest_detail_product
 from contextlib import asynccontextmanager, suppress
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import get_pg_conn, get_db_session, get_maria_session, get_maria_conn
+import threading
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -328,9 +328,10 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 
-    # print(humanmes)
+    print(humanmes)
+    print(intent_name)
+    print(score)
     # print(source)
-    # print(score)
     # print(chosen_tools)
 
     llm, system_prompt = get_current_llm_setting(db)

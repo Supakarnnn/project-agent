@@ -6,7 +6,7 @@ from sentence_transformers import SentenceTransformer
 from agent.model import embedding_model
 
 # ===== Config =====
-GLOBAL_MIN_CONFIDENCE = 0.65
+GLOBAL_MIN_CONFIDENCE = 0.60
 STICKY_MIN_CONFIDENCE = 0.50
 OVERRIDE_MARGIN = 0.08
 SESSION_TIMEOUT_MIN = 15
@@ -90,7 +90,6 @@ def match_intent_single(
     if best_score >= GLOBAL_MIN_CONFIDENCE:
         return item["intent"], item["tool"], best_score
     return None, None, best_score
-
 
 def resolve_intent_with_context(
     user_inputs: List[str],
