@@ -14,6 +14,12 @@ export default function Home() {
   const [loadingIntents, setLoadingIntents] = useState(true);
   const [errIntents, setErrIntents] = useState("");
 
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectAll, setSelectAll] = useState(false);
+
+  const [tpSelectedIds, setTpSelectedIds] = useState([]);
+  const [tpSelectAll, setTpSelectAll] = useState(false);
+
   const [phrase, setPhrase] = useState([]);
   const [loadingPhrase, setLoadingPhrase] = useState(true);
   const [errPhrase, setErrPhrase] = useState("");
@@ -33,6 +39,8 @@ export default function Home() {
   const [tpErr, setTpErr] = useState("");
 
   const dlgRef = useRef(null);
+  const delDlgRef = useRef(null);
+
   useEffect(() => {
     if (!dlgRef.current) return;
     if (showAdd) dlgRef.current.showModal();
@@ -107,7 +115,6 @@ export default function Home() {
     return m;
   }, [intents]);
 
-  const delDlgRef = useRef(null);
   useEffect(() => {
     if (!delDlgRef.current) return;
     showDel ? delDlgRef.current.showModal() : delDlgRef.current.close();
@@ -146,33 +153,6 @@ export default function Home() {
     setToolI("");
     setDescI("");
     setShowAdd(false);
-  }
-
-  async function deleteSelectedIntent(e) {
-    e.preventDefault();
-    const id = Number(delId);
-    if (!Number.isInteger(id)) {
-      alert("กรุณาเลือก ID ให้ถูกต้อง");
-      return;
-    }
-
-    if (!confirm(`ยืนยันลบ intent #${id}?`)) return;
-
-    const resp = await fetch(`${API}/admin/delete-intents/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-      headers: { Accept: "application/json" },
-    });
-
-    const j = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      alert(j.detail || "ลบไม่สำเร็จ");
-      return;
-    }
-
-    setIntents((prev) => prev.filter((it) => it.intent_id !== id));
-    setDelId("");
-    setShowDel(false);
   }
 
   async function addTrainingPhrases(e) {
@@ -240,285 +220,378 @@ export default function Home() {
       setTpText("");
     }
   }
+  async function deleteSelectedIntents() {
+    if (selectedIds.length === 0) return;
+
+    if (!confirm(`ยืนยันลบ intents ${selectedIds.join(", ")} ?`)) return;
+
+    const successIds = [];
+    for (const id of selectedIds) {
+      try {
+        const resp = await fetch(`${API}/admin/delete-intents/${id}`, {
+          method: "DELETE",
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        });
+        if (resp.ok) successIds.push(id);
+      } catch (err) {
+        console.error("Delete failed:", err);
+      }
+    }
+
+    if (successIds.length > 0) {
+      setIntents((prev) => prev.filter((it) => !successIds.includes(it.intent_id)));
+      alert(`ลบสำเร็จ ${successIds.length} รายการ`);
+    } else {
+      alert("ลบไม่สำเร็จ");
+    }
+
+    setSelectedIds([]);
+    setSelectAll(false);
+  }
+
+  async function deleteSelectedTPs() {
+    if (tpSelectedIds.length === 0) return;
+
+    if (!confirm(`ยืนยันลบ Training phrases?`)) return;
+
+    const successIds = [];
+    for (const tpId of tpSelectedIds) {
+      try {
+        const resp = await fetch(`${API}/admin/delete-training-phrases/${tpId}`, {
+          method: "DELETE",
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        });
+        if (resp.ok) successIds.push(tpId);
+      } catch (err) {
+        console.error("Delete TP failed:", err);
+      }
+    }
+
+    if (successIds.length > 0) {
+      setPhrase((prev) => prev.filter((p) => !successIds.includes(p.tp_id)));
+      alert(`ลบสำเร็จ ${successIds.length} รายการ`);
+    } else {
+      alert("ลบไม่สำเร็จ");
+    }
+
+    setTpSelectedIds([]);
+    setTpSelectAll(false);
+  }
+
 
   return (
     <div className={styles.layout}>
       <Navbar />
-      <main className={styles.main}>
-        <div className={styles.header}>
-          <h1 className={styles.title}>Tools in Server</h1>
-          <LogoutButton>Logout</LogoutButton>
-        </div>
 
-        {/* -------- Tools Section -------- */}
-        {loadingTools ? (
-          <p>กำลังโหลด tools...</p>
-        ) : (
-          <table style={{ marginTop: 8, borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Tool name</th>
-                {/* <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Parameter</th> */}
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(tools).map(([name, info]) => (
-                <tr key={name}>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{name}</td>
-                  {/* <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{info.parameter}</td> */}
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{info.description}</td>
+      <main className={styles.main}>
+        <div className={styles.card} style={{ marginBottom: 12 }}>
+          <div className={styles.header}>
+            <h1 className={styles.title}>Tools in Server</h1>
+            <LogoutButton>Logout</LogoutButton>
+          </div>
+
+          {/* -------- Tools Section -------- */}
+          {loadingTools ? (
+            <p>กำลังโหลด tools...</p>
+          ) : (
+            <table style={{ marginTop: 8, borderCollapse: "collapse", width: "100%" }}>
+              <thead>
+                <tr>
+                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Tool name</th>
+                  {/* <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Parameter</th> */}
+                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Description</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+              </thead>
+              <tbody>
+                {Object.entries(tools).map(([name, info]) => (
+                  <tr key={name}>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{name}</td>
+                    {/* <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{info.parameter}</td> */}
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{info.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}</div>
+
 
         {/* -------- Intents Section -------- */}
-        <h2 style={{ marginTop: 24 }}>Intents</h2>
-        <button onClick={() => setShowAdd(true)}>Add Intent</button>
-        <button
-          style={{ marginLeft: 5 }}
-          onClick={() => setShowDel(true)}
-          disabled={!intents || intents.length === 0}
-        >
-          Delete Intent
-        </button>
+        <div className={styles.card} style={{ marginBottom: 12 }}>
+          <h2 style={{ marginTop: 24 }}>Intents</h2>
+          <button onClick={() => setShowAdd(true)}>Add Intent</button>
+          <button
+            style={{ marginLeft: 5 }}
+            onClick={deleteSelectedIntents}
+            disabled={selectedIds.length === 0}
+          >
+            Delete Selected
+          </button>
 
-        {/* -------- Intents Pop-up -------- */}
-        <dialog ref={dlgRef} onClose={() => setShowAdd(false)} style={{ padding: 16, borderRadius: 12 }}>
-          <form onSubmit={addIntent} style={{ display: "grid", gap: 8, minWidth: 320 }}>
-            <h3 style={{ marginBottom: 6 }}>Add Intent</h3>
-
-            <label>
-              <div>Intent Name</div>
-              <select
-                value={nameI}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setNameI(v);
-                  setToolI(v);
-                }}
-                required
-                disabled={!tools || Object.keys(tools).length === 0}
-                style={{ width: "100%", padding: 8, border: "1px solid " + "#ddd", borderRadius: 8 }}
-              >
-                <option value="" disabled>
-                  -- เลือกจาก Tool Name --
-                </option>
-                {Object.keys(tools || {}).map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-              {(!tools || Object.keys(tools).length === 0) && (
-                <small style={{ color: "#888" }}>ยังไม่มี tools ให้เลือก</small>
-              )}
-            </label>
-
-            <label>
-              <div>Tool Name</div>
-              <select
-                value={toolI}
-                onChange={(e) => setToolI(e.target.value)}
-                required
-                disabled={!tools || Object.keys(tools).length === 0}
-                style={{ width: "100%", padding: 8, border: "1px solid " + "#ddd", borderRadius: 8 }}
-              >
-                <option value="" disabled>
-                  -- เลือกเครื่องมือ --
-                </option>
-                {Object.keys(tools || {}).map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-              {(!tools || Object.keys(tools).length === 0) && (
-                <small style={{ color: "#888" }}>ยังไม่มี tools ให้เลือก</small>
-              )}
-            </label>
-
-            <label>
-              <div>Description</div>
-              <textarea rows={3} value={descI} onChange={(e) => setDescI(e.target.value)} />
-            </label>
-
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
-              <button type="submit">Save</button>
-              <button type="button" onClick={() => setShowAdd(false)}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </dialog>
-
-        <dialog ref={delDlgRef} onClose={() => setShowDel(false)} style={{ padding: 16, borderRadius: 12 }}>
-          <form onSubmit={deleteSelectedIntent} style={{ display: "grid", gap: 10, minWidth: 320 }}>
-            <h3 style={{ marginBottom: 6 }}>Delete Intent</h3>
-
-            <label>
-              <div>เลือก ID ที่ต้องการลบ</div>
-              <select
-                value={delId}
-                onChange={(e) => setDelId(e.target.value)}
-                required
-                style={{ width: "100%", padding: 8, border: "1px solid #ddd", borderRadius: 8 }}
-              >
-                <option value="" disabled>
-                  -- เลือก intent_id --
-                </option>
-                {intents.map((it) => (
-                  <option key={it.intent_id} value={it.intent_id}>
-                    #{it.intent_id} — {it.name} ({it.tool_name})
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
-              <button type="submit">Delete</button>
-              <button type="button" onClick={() => setShowDel(false)}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </dialog>
-
-        {loadingIntents ? (
-          <p>กำลังโหลด intents...</p>
-        ) : errIntents ? (
-          <div style={{ color: "crimson", marginTop: 8 }}>{errIntents}</div>
-        ) : (
-          <table style={{ marginTop: 8, borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>intent_id</th>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>name</th>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>description</th>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>tool_name</th>
-              </tr>
-            </thead>
-            <tbody>
-              {intents.length === 0 ? (
+          {loadingIntents ? (
+            <p>กำลังโหลด intents...</p>
+          ) : errIntents ? (
+            <div style={{ color: "crimson", marginTop: 8 }}>{errIntents}</div>
+          ) : (
+            <table style={{ marginTop: 8, borderCollapse: "collapse", width: "100%" }}>
+              <thead>
                 <tr>
-                  <td colSpan={4} style={{ padding: 8 }}>
-                    ไม่พบข้อมูล
-                  </td>
+                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "center", padding: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectAll}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setSelectAll(checked);
+                        setSelectedIds(checked ? intents.map((it) => it.intent_id) : []);
+                      }}
+                    />
+                  </th>
+                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>intent_id</th>
+                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>name</th>
+                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>description</th>
+                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>tool_name</th>
                 </tr>
-              ) : (
-                intents.map((it) => (
-                  <tr key={it.intent_id}>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.intent_id}</td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.name}</td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.description}</td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.tool_name}</td>
+              </thead>
+              <tbody>
+                {intents.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ padding: 8 }}>ไม่พบข้อมูล</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        )}
+                ) : (
+                  intents.map((it) => (
+                    <tr key={it.intent_id}>
+                      <td style={{ borderBottom: "1px solid #eee", textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(it.intent_id)}
+                          onChange={(e) => {
+                            if (e.target.checked)
+                              setSelectedIds((prev) => [...prev, it.intent_id]);
+                            else
+                              setSelectedIds((prev) => prev.filter((id) => id !== it.intent_id));
+                          }}
+                        />
+                      </td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.intent_id}</td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.name}</td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.description}</td>
+                      <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.tool_name}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
+
+          {/* -------- Intents Pop-up -------- */}
+          <dialog ref={dlgRef} onClose={() => setShowAdd(false)} style={{ padding: 16, borderRadius: 12 }}>
+            <form onSubmit={addIntent} style={{ display: "grid", gap: 8, minWidth: 320 }}>
+              <h3 style={{ marginBottom: 6 }}>Add Intent</h3>
+
+              <label>
+                <div>Intent Name</div>
+                <select
+                  value={nameI}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setNameI(v);
+                    setToolI(v);
+                  }}
+                  required
+                  disabled={!tools || Object.keys(tools).length === 0}
+                  style={{ width: "100%", padding: 8, border: "1px solid " + "#ddd", borderRadius: 8 }}
+                >
+                  <option value="" disabled>
+                    -- เลือกจาก Tool Name --
+                  </option>
+                  {Object.keys(tools || {}).map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                {(!tools || Object.keys(tools).length === 0) && (
+                  <small style={{ color: "#888" }}>ยังไม่มี tools ให้เลือก</small>
+                )}
+              </label>
+
+              <label>
+                <div>Tool Name</div>
+                <select
+                  value={toolI}
+                  onChange={(e) => setToolI(e.target.value)}
+                  required
+                  disabled={!tools || Object.keys(tools).length === 0}
+                  style={{ width: "100%", padding: 8, border: "1px solid " + "#ddd", borderRadius: 8 }}
+                >
+                  <option value="" disabled>
+                    -- เลือกเครื่องมือ --
+                  </option>
+                  {Object.keys(tools || {}).map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                {(!tools || Object.keys(tools).length === 0) && (
+                  <small style={{ color: "#888" }}>ยังไม่มี tools ให้เลือก</small>
+                )}
+              </label>
+
+              <label>
+                <div>Description</div>
+                <textarea rows={3} value={descI} onChange={(e) => setDescI(e.target.value)} />
+              </label>
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                <button type="submit">Save</button>
+                <button type="button" onClick={() => setShowAdd(false)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </dialog>
+        </div>
 
         {/* -------- Training phrases Section -------- */}
-        <h2 style={{ marginTop: 24 }}>Phrase</h2>
+        <div className={styles.card} style={{ marginBottom: 12 }}>
+          <h2 style={{ marginTop: 24 }}>Training phrases</h2>
+          <button onClick={() => setShowAddTP(true)} disabled={intents.length === 0}>
+            Add Training phrases
+          </button>
+          <button style={{ marginLeft: 5 }}
+            onClick={deleteSelectedTPs}
+            disabled={tpSelectedIds.length === 0}>
+            Delete Selected
+          </button>
 
-        <button onClick={() => setShowAddTP(true)} disabled={intents.length === 0}>
-          Add Training phrases
-        </button>
-        <button style={{ marginLeft: 5 }}>Delete Training phrases</button>
 
-        {/* Training Phrases Pop-up */}
-        <dialog ref={addTPDlgRef} onClose={() => setShowAddTP(false)} style={{ padding: 16, borderRadius: 12 }}>
-          <form onSubmit={addTrainingPhrases} style={{ display: "grid", gap: 8, minWidth: 360 }}>
-            <h3 style={{ marginBottom: 6 }}>Add Training Phrases</h3>
+          {/* Training Phrases Pop-up */}
+          <dialog ref={addTPDlgRef} onClose={() => setShowAddTP(false)} style={{ padding: 16, borderRadius: 12 }}>
+            <form onSubmit={addTrainingPhrases} style={{ display: "grid", gap: 8, minWidth: 360 }}>
+              <h3 style={{ marginBottom: 6 }}>Add Training Phrases</h3>
 
-            <label>
-              <div>เลือก Intent</div>
-              <select
-                value={tpIntentId}
-                onChange={(e) => setTpIntentId(e.target.value)}
-                required
-                style={{ width: "100%", padding: 8, border: "1px solid #ddd", borderRadius: 8 }}
-              >
-                <option value="" disabled>
-                  -- เลือก intent_id --
-                </option>
-                {intents.map((it) => (
-                  <option key={it.intent_id} value={it.intent_id}>
-                    #{it.intent_id} — {it.name} ({it.tool_name})
+              <label>
+                <div>เลือก Intent</div>
+                <select
+                  value={tpIntentId}
+                  onChange={(e) => setTpIntentId(e.target.value)}
+                  required
+                  style={{ width: "100%", padding: 8, border: "1px solid #ddd", borderRadius: 8 }}
+                >
+                  <option value="" disabled>
+                    -- เลือก intent_id --
                   </option>
-                ))}
-              </select>
-            </label>
+                  {intents.map((it) => (
+                    <option key={it.intent_id} value={it.intent_id}>
+                      #{it.intent_id} — {it.name} ({it.tool_name})
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <label>
-              <div>Phrase (รองรับหลายบรรทัด)</div>
-              <textarea
-                rows={5}
-                value={tpText}
-                onChange={(e) => setTpText(e.target.value)}
-                required
-              />
-            </label>
+              <label>
+                <div>Phrase (รองรับหลายบรรทัด)</div>
+                <textarea
+                  rows={5}
+                  value={tpText}
+                  onChange={(e) => setTpText(e.target.value)}
+                  required
+                />
+              </label>
 
-            {tpErr && <div style={{ color: "crimson" }}>{tpErr}</div>}
+              {tpErr && <div style={{ color: "crimson" }}>{tpErr}</div>}
 
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
-              <button type="submit" disabled={tpLoading}>
-                {tpLoading ? "Saving..." : "Save"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddTP(false);
-                  setTpErr("");
-                }}
-                disabled={tpLoading}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </dialog>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                <button type="submit" disabled={tpLoading}>
+                  {tpLoading ? "Saving..." : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddTP(false);
+                    setTpErr("");
+                  }}
+                  disabled={tpLoading}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </dialog>
 
-        {loadingPhrase ? (
-          <p>กำลังโหลด Phrase...</p>
-        ) : errPhrase ? (
-          <div style={{ color: "crimson", marginTop: 8 }}>{errPhrase}</div>
-        ) : (
-          <table style={{ marginTop: 8, borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                {/* <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>tp_id</th>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>intent_id</th> */}
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>tool_name</th>
-                <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Phrase</th>
-              </tr>
-            </thead>
-            <tbody>
-              {phrase.length === 0 ? (
+          {loadingPhrase ? (
+            <p>กำลังโหลด Phrase...</p>
+          ) : errPhrase ? (
+            <div style={{ color: "crimson", marginTop: 8 }}>{errPhrase}</div>
+          ) : (
+            <table style={{ marginTop: 8, borderCollapse: "collapse", width: "100%" }}>
+              <thead>
                 <tr>
-                  <td colSpan={4} style={{ padding: 8 }}>
-                    ไม่พบข้อมูล
-                  </td>
+                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "center", padding: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={tpSelectAll}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setTpSelectAll(checked);
+                        const sorted = [...phrase].sort((a, b) => {
+                          const A = (toolByIntentId[a.intent_id] || "").toLowerCase();
+                          const B = (toolByIntentId[b.intent_id] || "").toLowerCase();
+                          return A.localeCompare(B);
+                        });
+                        setTpSelectedIds(checked ? sorted.map((p) => p.tp_id) : []);
+                      }}
+                    />
+                  </th>
+                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>tool_name</th>
+                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Phrase</th>
                 </tr>
-              ) : (
-                phrase.map((it) => (
-                  <tr key={it.tp_id}>
-                    {/* <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.tp_id}</td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.intent_id}</td> */}
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                      {toolByIntentId[it.intent_id] || "-"}
-                    </td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.phrase}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        )}
+              </thead>
+              <tbody>
+                {(() => {
+                  const sortedPhrase = [...phrase].sort((a, b) => {
+                    const nameA = (toolByIntentId[a.intent_id] || "").toLowerCase();
+                    const nameB = (toolByIntentId[b.intent_id] || "").toLowerCase();
+                    return nameA.localeCompare(nameB);
+                  });
+
+                  if (sortedPhrase.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={3} style={{ padding: 8 }}>ไม่พบข้อมูล</td>
+                      </tr>
+                    );
+                  }
+
+                  return sortedPhrase.map((it) => {
+                    const tool = toolByIntentId[it.intent_id] || "-";
+                    const checked = tpSelectedIds.includes(it.tp_id);
+                    return (
+                      <tr key={it.tp_id}>
+                        <td style={{ borderBottom: "1px solid #eee", textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked)
+                                setTpSelectedIds((prev) => [...prev, it.tp_id]);
+                              else
+                                setTpSelectedIds((prev) => prev.filter((id) => id !== it.tp_id));
+                            }}
+                          />
+                        </td>
+                        <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{tool}</td>
+                        <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.phrase}</td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          )} </div>
       </main>
     </div>
   );

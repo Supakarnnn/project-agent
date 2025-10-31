@@ -198,6 +198,21 @@ def create_training_phrases(intent_id: int, phrase: str, db: Session = Depends(g
         db.commit()
         return {"tp_id": tp_id, "intent_id": intent_id, "phrase": phrase}
 
+@router.delete("/delete-training-phrases/{tp_id}")
+def delete_training_phrase(tp_id: int, db: Session = Depends(get_pg_conn)):
+    try:
+        res = db.execute(
+            text("DELETE FROM training_phrases WHERE tp_id = :tp_id"),
+            {"tp_id": tp_id},
+        )
+
+        db.commit()
+        return {"deleted": True, "tp_id": res}
+    
+    except Exception as e:
+        db.rollback()
+        return f"Cant delete tp {e}"
+
 @router.get("/tools-in-server")
 async def tools_in_server():
     return {"available_tools": get_registered_tools()}
