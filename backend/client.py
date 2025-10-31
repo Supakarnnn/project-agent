@@ -16,8 +16,7 @@ from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now
 from sentiment_model.s_model import detect_sentiment
 from auth_admin.auth import verify_password, hash_password
-from agent.confident_cal import extract_token_logprobs, cal_confidence
-from starlette.concurrency import run_in_threadpool
+from agent.confident_cal import cal_confidence
 from ingest_data_v2 import ingest_promotion_product, ingest_all_product, ingest_detail_product
 from contextlib import asynccontextmanager, suppress
 from sqlalchemy.orm import Session
@@ -304,6 +303,7 @@ app.include_router(router)
 async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), external_session_id: Optional[str] = Header(None, alias="X-Session-Id"), close_now: Optional[str] = Header(None, alias="X-Close-Session")):
     messages = []
     humanmes = []
+    aimanmes = []
 
     print("X-Session-Id received =", external_session_id)
     autoclose_inactive_sessions(db)
@@ -318,6 +318,7 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     for chat in chatmessage.messages:
         if chat.role == 'ai':
             messages.append(AIMessage(content=chat.content))
+            aimanmes.append(chat.content.strip())
         elif chat.role == 'human':
             messages.append(HumanMessage(content=chat.content))
             humanmes.append(chat.content.strip())
@@ -343,22 +344,17 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 
-    print(humanmes)
-    print(intent_name)
-    print(score)
+    # print(humanmes)
+    # print(aimanmes)
+    print(f"[intent]: {intent_name}")
+    print(f"[intent score]: {score}")
     # print(source)
     # print(chosen_tools)
 
     llm, system_prompt = get_current_llm_setting(db)
     tool_names = ", ".join(_tool_name(t) for t in chosen_tools) if chosen_tools else "None"
 
-    intent_prompt_template = f"""[INTENT] {intent_name or 'None'} (confidence={score:.2f}) [ALLOWED_TOOLS] {tool_names}
-    [BEHAVIOR RULES]
-    - หากตรวจจับได้ว่าเป็นงานเฉพาะ ควรพิจารณาใช้เครื่องมือเฉพาะทางก่อน
-    - หากเป็นคำถามทั่วไปหรือยังไม่ชัดเจน ให้ใช้ เครื่องมืออื่น หรือ ถามย้ำเพื่อให้ชัดเจนก่อน
-    - หากข้อมูลไม่พอ ให้ถามลูกค้าอย่างสั้น กระชับ และเฉพาะเจาะจงก่อนเรียกใช้เครื่องมือ
-    - หลีกเลี่ยงการเดาข้อมูล หากไม่แน่ใจต้องถามย้ำด้วยถ้อยคำสุภาพ
-    """.strip()
+    intent_prompt_template = f"""[INTENT MATCHER] {intent_name or 'None'} [ALLOWED_TOOLS] {tool_names}""".strip()
     #========================================================================================================#
 
     sentiment = detect_sentiment(last_human_message)
@@ -379,8 +375,15 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     result = await agent.ainvoke({"messages": messages})
     final_msg: AIMessage = result["messages"][-1]
     final_result: str = final_msg.content
-    token_logprobs = extract_token_logprobs(final_msg)
-    cal_confidence_from_logprobs = cal_confidence(token_logprobs, drop_punct=True)
+    single_log = final_msg.response_metadata["logprobs"]["content"]
+    num_tokens = len(single_log)
+    total_logprob = sum(t["logprob"] for t in single_log)
+    avg_logprob = total_logprob / num_tokens
+    prob = cal_confidence(avg_logprob)
+    # print(num_tokens)
+    # print(total_logprob)
+    # print(avg_logprob)
+    # print(prob)
     #================================================================================#
     
     state.update({
@@ -393,6 +396,8 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     if (close_now or "").lower() == "true":
         close_session_now(db, session_id)
 
+    print(messages)
+    
     return {
         "session_id": str(session_id),
         "human_message": last_human_message,
@@ -401,12 +406,7 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
         "sentiment": sentiment,
         "intent": intent_name,
         "intent_score": float(score) if score else None,
-        "logprobs_summary": {
-            "avg_prob": cal_confidence_from_logprobs["avg"],
-            "min_prob": cal_confidence_from_logprobs["min"],
-            "geom_prob": cal_confidence_from_logprobs["geom"],
-            "token_count_used": cal_confidence_from_logprobs["n_used"]
-        },
+        "ai confident (avg probability)" : float(prob)
     }
 
 @app.get("/")
