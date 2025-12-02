@@ -10,7 +10,7 @@ from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate
 from agent.model import get_current_llm_setting
 from connect_milvus import connect_milvus
 from pymilvus import utility, Collection, connections
-from agent.tool_call import get_registered_tools, track_order_tool, for_list_collections, product_search, create_order, cancel_order, product_detail_search, promotion_search
+from agent.tool_call import (create_ticket, how_to_check_out, get_registered_tools, track_order_tool, product_search, create_order, cancel_order, product_detail_search, promotion_search)
 from intents.intent_matcher import load_intents, resolve_intent_with_context
 from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now
@@ -60,10 +60,15 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 auth_router = APIRouter(prefix="/auth",tags=["admin-auth"])
 connect_milvus()
 
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -96,19 +101,22 @@ def login(data: LoginIn, response: Response, db: Session = Depends(get_pg_conn))
         return "Invalid credentials"
 
     response.set_cookie("a_user", row["name"], httponly=True, samesite="lax")
+    response.set_cookie("a_role", row["role"], httponly=True, samesite="lax")
     return {"ok": True, "name": row["name"], "role": row["role"]}
 
 @auth_router.post("/logout")
 def logout(response: Response):
     response.delete_cookie("a_user")
+    response.delete_cookie("a_role")
     return {"ok": True}
 
 @auth_router.get("/check")
 def check(request: Request):
     user = request.cookies.get("a_user")
-    if not user:
+    role = request.cookies.get("a_role")
+    if not user or not role:
         raise HTTPException(status_code=401, detail="Not logged in")
-    return {"name": user}
+    return {"name": user, "role": role}
 
 app.include_router(auth_router)
 
@@ -305,7 +313,6 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     humanmes = []
     aimanmes = []
 
-    print("X-Session-Id received =", external_session_id)
     autoclose_inactive_sessions(db)
     session_id = get_or_create_session(db, external_session_id)
     
@@ -331,21 +338,23 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     intent_name, tool_name, score, source = resolve_intent_with_context(humanmes, intent_data, state)
 
     tool_registry = {
-        "for_list_collections": for_list_collections,
         "track_order_tool": track_order_tool,
         "create_order": create_order,
         "cancel_order": cancel_order,
         "product_search": product_search,
         "product_detail_search": product_detail_search,
-        "promotion_search": promotion_search
+        "how_to_check_out":how_to_check_out,
+        "promotion_search": promotion_search,
+        "create_ticket": create_ticket
     }
 
-    chosen_tools = [tool_registry["product_search"], tool_registry["product_detail_search"], tool_registry["promotion_search"]]
+    chosen_tools = [tool_registry["product_search"], tool_registry["product_detail_search"], tool_registry["promotion_search"], tool_registry["create_order"], tool_registry["how_to_check_out"]]
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 
     # print(humanmes)
     # print(aimanmes)
+    print("X-Session-Id received =", external_session_id)
     print(f"[intent]: {intent_name}")
     print(f"[intent score]: {score}")
     # print(source)
@@ -369,12 +378,17 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
 
     messages.insert(1, SystemMessage(content=f"ระบบจับอารมณ์อัตโนมัติ: [SENTIMENT] {sentiment_content}"))
     messages.insert(2, SystemMessage(content=intent_prompt_template))
+    messages.insert(3, SystemMessage(content=f"SESSION_ID_FOR_THIS_CONVERSATION = {session_id}"))
 
     #================================================================================#
     agent = react_agent(llm, chosen_tools, system_prompt)
-    result = await agent.ainvoke({"messages": messages})
+    result = await agent.ainvoke({"messages": messages, "used_tools": []})
+    used_tools = result.get("used_tools", [])
+    print("[TOOLS USED IN THIS CALL] =", used_tools)
+
     final_msg: AIMessage = result["messages"][-1]
     final_result: str = final_msg.content
+    #================================================================================#
     single_log = final_msg.response_metadata["logprobs"]["content"]
     num_tokens = len(single_log)
     total_logprob = sum(t["logprob"] for t in single_log)
@@ -396,7 +410,7 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     if (close_now or "").lower() == "true":
         close_session_now(db, session_id)
 
-    print(messages)
+    # print(messages)
     
     return {
         "session_id": str(session_id),
@@ -405,6 +419,7 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
         "response": final_result,
         "sentiment": sentiment,
         "intent": intent_name,
+        "tool_used": used_tools,
         "intent_score": float(score) if score else None,
         "ai confident (avg probability)" : float(prob)
     }
@@ -412,6 +427,40 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
 @app.get("/")
 async def health_check():
     return {"status": "healthy"}
+
+@app.get("/check_payment")
+async def check_payment(
+    code: str = Query(..., description="หมายเลขคำสั่งซื้อ"),
+    db: Session = Depends(get_maria_conn),):
+    sql = text("""
+        SELECT 
+            name,
+            tel,
+            code,
+            discountdetail,
+            shipping,
+            pay_amount,
+            shipping_code,
+            address,
+            province,
+            district,
+            subdistrict,
+            zipcode,
+            postatus
+        FROM tbl_so
+        WHERE code = :code
+        LIMIT 1
+    """)
+
+    result = db.execute(sql, {"code": code}).mappings().first()
+
+    if not result:
+        raise HTTPException(status_code=404, detail="ไม่พบหมายเลขคำสั่งซื้อในระบบ")
+
+    return {
+        "success": True,
+        "data": dict(result),
+    }
 
 @app.get("/test-db")
 def test_both(pg: Session = Depends(get_pg_conn), maria: Session = Depends(get_maria_conn)):

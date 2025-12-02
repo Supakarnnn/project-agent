@@ -3,16 +3,18 @@
 import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import styles from "./page.module.css";
+import CreateSO from "./createso";
+import Feedback from "./feedback";
 
 export default function Home() {
-  // --- chat state ---
+  //chat state
   const [messages, setMessages] = useState([
     { role: "ai", content: "สวัสดี เราคือ HealthCare++ 🩺 พร้อมช่วยแนะนำสินค้าสุขภาพให้คุณค่ะ" },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // --- session handling ---
+  //session
   const SESSION_KEY = "chat_session_id";
   const getSessionId = () =>
     typeof window !== "undefined" ? sessionStorage.getItem(SESSION_KEY) : null;
@@ -20,7 +22,6 @@ export default function Home() {
     if (typeof window !== "undefined") sessionStorage.setItem(SESSION_KEY, id);
   };
 
-  // --- refs / actions ---
   const chatRef = useRef(null);
   const ctaToChat = () => {
     if (chatRef.current) chatRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -51,13 +52,13 @@ export default function Home() {
       const aiText =
         typeof data?.response === "string"
           ? data.response
-          : "ขอโทษค่ะ ระบบมีปัญหาชั่วคราว ลองอีกครั้งได้นะคะ";
+          : "ขอโทษค่ะ ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้งค่ะ";
       setMessages((prev) => [...prev, { role: "ai", content: aiText }]);
     } catch (e) {
       console.error(e);
       setMessages((prev) => [
         ...prev,
-        { role: "ai", content: "โอ๊ปส์! มีบางอย่างผิดพลาด กรุณาลองใหม่อีกครั้งค่ะ" },
+        { role: "ai", content: "ขอโทษค่ะ ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้งค่ะ" },
       ]);
     } finally {
       setLoading(false);
@@ -70,13 +71,12 @@ export default function Home() {
       <header className={styles.nav}>
         <div className={styles.logo}>HealthCare++</div>
         <nav className={styles.navLinks}>
-          <a href="#products">Products</a>
+          <a href="/payment">Payment</a>
           <a href="#whyus">Why Us</a>
           <a href="#faq">FAQ</a>
         </nav>
       </header>
 
-      {/* Hero */}
       <section className={styles.hero}>
         <div className={styles.heroInner}>
           <div className={styles.heroText}>
@@ -97,7 +97,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* twin images like screenshot */}
           <div className={styles.imageRow}>
             <div className={styles.cardImg}>
               <img src="/cyber_ai.jpg" alt="" />
@@ -131,6 +130,14 @@ export default function Home() {
                   className={`${styles.bubble} ${m.role === "human" ? styles.userBubble : styles.aiBubble}`}
                 >
                   <ReactMarkdown>{m.content}</ReactMarkdown>
+                  {m.role !== "human" && i !== 0 && (
+                    <Feedback
+                      messageId={i}
+                      onRate={(data) => {
+                        console.log("rated:", data);
+                      }}
+                    />
+                  )}
                 </div>
 
                 {m.role === "human" && (
@@ -141,18 +148,42 @@ export default function Home() {
                 )}
               </div>
             ))}
+            {loading && (
+              <div className={`${styles.msgRow} ${styles.left}`}>
+                <div className={styles.profile}>
+                  <img src="/made-in-china.webp" alt="AI" />
+                  <div className={styles.name}>HealthCare++</div>
+                </div>
+
+                <div className={styles.typingIndicator}>
+                  <div className={styles.typingDot}></div>
+                  <div className={styles.typingDot}></div>
+                  <div className={styles.typingDot}></div>
+                </div>
+              </div>
+            )}
           </div>
 
-
           <div className={styles.inputArea}>
-            <input
+            <textarea
               className={styles.input}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  if (e.shiftKey) {
+                    return;
+                  }
+                  e.preventDefault();
+                  sendMessage();
+                }
+              }}
               placeholder="พิมพ์ เช่น “โฟมล้างหน้าสำหรับผิวแห้ง”"
               aria-label="พิมพ์ข้อความแชต"
             />
+
+            <CreateSO />
+
             <button
               className={styles.button}
               onClick={sendMessage}

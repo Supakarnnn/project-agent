@@ -12,24 +12,38 @@ export default function AdminLogin() {
   const submit = async (e) => {
     e.preventDefault();
     setErr("");
-    const resp = await fetch(process.env.NEXT_PUBLIC_API_URL + "/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ name, password }),
-    });
-    if (resp.ok) {
-      r.replace("/admin");
-    } else {
-      const j = await resp.json().catch(() => ({ detail: "Login failed" }));
-      setErr(j.detail || "Login failed");
+
+    try {
+      const resp = await fetch(process.env.NEXT_PUBLIC_API_URL + "/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name, password }),
+      });
+
+      if (!resp.ok) {
+        const j = await resp.json().catch(() => ({ detail: "Login failed" }));
+        throw new Error(j.detail || "Login failed");
+      }
+
+      const data = await resp.json();
+
+      if (data.role === "admin") {
+        r.replace("/admin");
+      } else if (data.role === "call_center") {
+        r.replace("/admin/call");
+      } else {
+        setErr("role not allow");
+      }
+    } catch (err) {
+      setErr(err.message || "Login failed");
     }
   };
 
   return (
     <div className={styles.container}>
       <form onSubmit={submit} className={styles.form}>
-        <h1 className={styles.title}>Admin Login</h1>
+        <h1 className={styles.title}>Healtcare++ Admin Login</h1>
         <input
           className={styles.input}
           placeholder="username"

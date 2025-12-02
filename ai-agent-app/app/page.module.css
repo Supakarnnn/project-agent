@@ -118,7 +118,8 @@
   border: 1px solid #e2e8f0;
   background: #fff;
   border-radius: 14px;
-  height: 380px;
+  height: 500px;
+  width: auto;
   overflow: auto;
   padding: 14px;
   display: flex;
@@ -163,12 +164,20 @@
 .aiBubble {
   background: #eef2ff;
   border: 1px solid #dbeafe;
+  width: 630px;
 }
 .userBubble {
   background: #2563eb;
   color: #fff;
 }
 .bubble :where(p) { margin: 0; }
+
+.bubbleColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 
 .inputArea {
   display: flex;
@@ -193,6 +202,38 @@
   font-weight: 600;
 }
 .button[disabled] { opacity: .6; cursor: not-allowed; }
+
+.typingIndicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
+  background: #f3f4f6;
+  border-radius: 15px;
+  width: fit-content;
+}
+
+.typingDot {
+  width: 6px;
+  height: 6px;
+  background: #555;
+  border-radius: 50%;
+  animation: blink 1.4s infinite both;
+}
+
+.typingDot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typingDot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0% { opacity: 0.2; }
+  20% { opacity: 1; }
+  100% { opacity: 0.2; }
+}
 
 /* FOOTER */
 .footer {

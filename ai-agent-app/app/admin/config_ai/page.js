@@ -92,13 +92,10 @@ export default function ConfigAI() {
         <form id="configForm" onSubmit={save} style={{ display: "grid", gap: 12, maxWidth: 600, marginTop: 16 }}>
           <label>
             <div>Model</div>
-            <input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="gpt-4o-mini"
-              style={{ width: "100%", padding: 6 }}
-              required
-            />
+            <select name="model" value={model} onChange={(e) => setModel(e.target.value)} style={{ width: "100%", padding: 6 }}>
+              <option value="gpt-4o-mini">gpt-4o-mini</option>
+              <option value="gpt-4.1-nano">gpt-4.1-nano</option>
+            </select>
           </label>
 
           <label>
