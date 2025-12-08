@@ -5,7 +5,6 @@ from typing import Optional, List
 from langchain.tools import tool
 from agent.model import embedding_model
 from langchain_milvus import Milvus
-from sqlalchemy.orm import Session
 from sqlalchemy import text
 import requests
 from datetime import datetime, timedelta
@@ -173,16 +172,67 @@ async def promotion_search(query: str) -> str:
         return "เครื่องมือมีปัญหา"
     
 @tool
-def track_order_tool(order_id: str) -> str:
-    """เครื่องมือสำหรับ ติดตามการจัดส่งสิ้นค้า"""
-    print(f"LLM is try using track_order_tool with {order_id}")
-    return f"สถานะของออเดอร์ {order_id} คือ: กำลังจัดส่ง"
+def track_order_tool(order_id: str, name: str) -> str:
+    """
+    เครื่องมือสำหรับ ติดตามใบสั่งซื้อสิ้นค้าหรือคำสั่งซื้อ
+    - order_id = code หรือ รหัสใบสั่งซื้อ (SO.XXXXXX-XXXXX)
+    - name = ชื่อ-สกุล ลูกค้า 
+    """
+    print(f"LLM is try using track_order_tool with {order_id} and {name}")
+    db = get_maria_session()
+
+    try:
+        row = db.execute(
+            text("""
+                SELECT 
+                    name,tel,code,shipping,pay_amount,shipping_code,
+                    address,province,district,subdistrict,zipcode,postatus
+                FROM tbl_so
+                WHERE code = :c AND name = :n
+                LIMIT 1
+            """),
+            {"c": order_id, "n": name}
+        ).mappings().first()
+
+        order_data = {
+            "name": row["name"],
+            "tel": row["tel"],
+            "code": row["code"],
+            "shipping": float(row["shipping"]) if row["shipping"] else None,
+            "pay_amount": float(row["pay_amount"]) if row["pay_amount"] else None,
+            "total_amount (ราคาสิ้นค้า + ค่าจัดส่ง)": float(row["shipping"]) + float(row["pay_amount"]),
+            "shipping_code": row["shipping_code"],
+            "address": row["address"],
+            "province": row["province"],
+            "district": row["district"],
+            "subdistrict": row["subdistrict"],
+            "zipcode": str(row["zipcode"]),
+            "status": row["postatus"],
+        }
+
+        final_output = {
+            "success": True,
+            "message": "ดึงข้อมูลสำเร็จ",
+            "order": order_data
+        }
+
+        print("[track_order_tool] OUTPUT:", final_output)
+
+        return json.dumps(final_output, ensure_ascii=False, indent=2)
+
+    except Exception as e:
+        print(f"เกิดข้อผิดพลาด: {str(e)}")
+        return f"เกิดข้อผิดพลาด: {str(e)}"
+
+    finally:
+        db.close()
+    
 
 @tool
 def cancel_order():
     """เครื่องมือสำหรับยกเลิกคำสั่งซื้อสิ้นค้า"""
     print("LLM is trying to use cancel_order")
-    return "ระบบยังไม่พร้อม"
+    return "ถ้าลูกค้าจะยกเลิกสั่งซื้อสิ้นค้า ให้คุณสร้าง ticket ให้ลูกค้าด้วย เครื่องมือ create_ticket เพื่อให้เจ้าหน้าที่ที่เป็นมนุษย์ให้บริการแทน"
 
 
 def get_registered_tools():
@@ -302,6 +352,9 @@ def create_order(data: CreateOrderInput) -> str:
 
     except Exception as e:
         return f"เกิดข้อผิดพลาดในการส่งคำสั่งซื้อ: {str(e)}"
+    
+    finally:
+        db.close()
     
 @tool
 def how_to_check_out():

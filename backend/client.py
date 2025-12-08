@@ -348,7 +348,7 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
         "create_ticket": create_ticket
     }
 
-    chosen_tools = [tool_registry["product_search"], tool_registry["product_detail_search"], tool_registry["promotion_search"], tool_registry["create_order"], tool_registry["how_to_check_out"]]
+    chosen_tools = [tool_registry["create_ticket"],tool_registry["track_order_tool"],tool_registry["product_search"], tool_registry["product_detail_search"], tool_registry["promotion_search"], tool_registry["create_order"], tool_registry["how_to_check_out"]]
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 
