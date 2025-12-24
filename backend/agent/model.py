@@ -1,12 +1,15 @@
 import os
 import torch
+import uuid
 import dotenv
 from langchain_community.embeddings import DeepInfraEmbeddings
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from datetime import datetime
 from sqlalchemy.orm import relationship, declarative_base
 
 
@@ -51,4 +54,12 @@ class TrainingPhrase(Base):
     intent_id = Column(Integer, ForeignKey("intents.intent_id", ondelete="CASCADE"))
     phrase = Column(String, nullable=False)
     intent = relationship("Intent", back_populates="training_phrases")
+
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    external_session_id = Column(String, unique=True, nullable=True)
+    mode = Column(String, default="ai") 
+    now = datetime.now()
+    started_at = Column(DateTime, default=now)
 

@@ -95,6 +95,7 @@ export default function ConfigAI() {
             <select name="model" value={model} onChange={(e) => setModel(e.target.value)} style={{ width: "100%", padding: 6 }}>
               <option value="gpt-4o-mini">gpt-4o-mini</option>
               <option value="gpt-4.1-nano">gpt-4.1-nano</option>
+              <option value="gpt-4.1-mini-2025-04-14">gpt-4.1-mini</option>
             </select>
           </label>
 

@@ -1,4 +1,5 @@
 import os
+import dotenv
 import inspect
 import string, json, random
 from typing import Optional, List
@@ -9,8 +10,8 @@ from sqlalchemy import text
 import requests
 from datetime import datetime, timedelta
 from agent.module import CreateOrderInput, CreateTicketInput
-import dotenv
 from database import get_maria_session
+from agent.check_address_data import val_address
 
 dotenv.load_dotenv()
 
@@ -75,7 +76,7 @@ async def product_search(query: str, min_price: Optional[int] = None, max_price:
 
     except Exception as e:
         print(e)
-        return "เครื่องมือมีปัญหา"
+        return "เครื่องมือมีปัญหาชั่วคราว"
     
 @tool
 async def product_detail_search(name: str) -> str:
@@ -84,49 +85,53 @@ async def product_detail_search(name: str) -> str:
     - name = ชื่อสิ้นค้า (ภาษาไทย, Eng)
     """
     print(f"LLM uses product_detail_search: q={name}")
+    db = get_maria_session()
     try:
-        collection = MILVUS_PRODUCT_DETAIL_COLLECTION
-        vectorstore = Milvus(
-            embedding_function=embedding_model,
-            collection_name=collection,
-            connection_args={"uri": f"http://{MILVUS_HOST}:{MILVUS_PORT}"},
-        )
+        row = db.execute(
+            text("""
+                SELECT id,name,name_eng,detail,brand,key_features,key_ingredients,suitable_for_concern,usage_instructions,size_volume,cost,stock_qty,notes,category_l1,category_l2
+                FROM tbl_material
+                WHERE name LIKE :n OR name_eng LIKE :n
+                LIMIT 1
+            """),
+            {"n": f"%{name}%"}
+        ).mappings().first()
 
-        k = 5
-        results = await vectorstore.asimilarity_search_with_score(name, k=k)
-        if not results:
-            return f"ไม่สิ้นค้าที่เกี่ยวข้องกับ {name}"
+        product_data = {
+            "product_id": row["id"],
+            "ชื่อ": row["name"],
+            "ชื่อ (Eng)": row["name_eng"],
+            "รายละเอียด": row["detail"],
+            "แบรนด์": row["brand"],
+            "ประเภทสินค้า": row["category_l1"],
+            "ชนิดสินค้า": row["category_l2"],
+            "จุดเด่น": row["key_features"],
+            "ส่วนประกอบสำคัญ": row["key_ingredients"],
+            "ช่วยแก้ไข": row["suitable_for_concern"],
+            "คำแนะนำการใช้งาน": row["usage_instructions"],
+            "ขนาด": row["size_volume"],
+            "ราคา (ต่อ 1 ชิ้น)": row["cost"],
+            "คงเหลือในระบบ": row["stock_qty"],
+            "หมายเหตุ": row["notes"]
+        }
 
-        lines = []
-        for doc, dist in results:
-            sim = 1.0 - float(dist)
-            if sim < 0.2:
-                continue
+        final_output = {
+            "success": True,
+            "message": "ดึงข้อมูลสำเร็จ",
+            "order": product_data
+        }
 
-            m = doc.metadata or {}
-            product_id = m.get("id")
-            name = m.get("name") or "(ไม่มีชื่อ)"
-            name_eng = m.get("name_eng") or "(ไม่มีชื่อ)"
-            detail = m.get("detail")
-            key_features = m.get("key_features")
-            key_ingredients = m.get("key_ingredients")
-            suitable_for_concern = m.get("suitable_for_concern")
-            usage_instructions = m.get("usage_instructions")
-            cost = m.get("cost")
-            notes = m.get("notes")
-            lines.append(f"- product_id {product_id} | {name} | {name_eng} | ราคา: {cost}| รายละเอียด: {detail} | จุดเด่น: {key_features} | ส่วนผสม: {key_ingredients} | ช่วยแก้ปัญหา: {suitable_for_concern} | การใช้งาน: {usage_instructions} | หมายเหตุ: {notes} (similarity={sim:.2f})")
+        print("[product_detail_search] OUTPUT:", final_output)
 
-        if not lines:
-            return f"ไม่สิ้นค้าที่เกี่ยวข้องกับ {name}"
-
-        output = "นี้คือข้อมูลที่ค้นเจอ **นำข้อมูลที่ค้นเจอตอบตามคำถามของลูกค้า** :\n" + "\n".join(lines)
-        print(output)
-        return output
+        return json.dumps(final_output, ensure_ascii=False, indent=2)
 
     except Exception as e:
-        print(e)
-        return "เครื่องมือมีปัญหา"
+        print(f"เกิดข้อผิดพลาด: {str(e)}")
+        return f"เครื่องมือมีปัญหาชั่วคราว"
 
+    finally:
+        db.close()
+       
 @tool
 async def promotion_search(query: str) -> str:
     """
@@ -174,7 +179,7 @@ async def promotion_search(query: str) -> str:
 @tool
 def track_order_tool(order_id: str, name: str) -> str:
     """
-    เครื่องมือสำหรับ ติดตามใบสั่งซื้อสิ้นค้าหรือคำสั่งซื้อ
+    เครื่องมือสำหรับ ติดตามรายละเอียดใบสั่งซื้อสิ้นค้าหรือคำสั่งซื้อ
     - order_id = code หรือ รหัสใบสั่งซื้อ (SO.XXXXXX-XXXXX)
     - name = ชื่อ-สกุล ลูกค้า 
     """
@@ -226,14 +231,12 @@ def track_order_tool(order_id: str, name: str) -> str:
 
     finally:
         db.close()
-    
-
+  
 @tool
 def cancel_order():
     """เครื่องมือสำหรับยกเลิกคำสั่งซื้อสิ้นค้า"""
     print("LLM is trying to use cancel_order")
     return "ถ้าลูกค้าจะยกเลิกสั่งซื้อสิ้นค้า ให้คุณสร้าง ticket ให้ลูกค้าด้วย เครื่องมือ create_ticket เพื่อให้เจ้าหน้าที่ที่เป็นมนุษย์ให้บริการแทน"
-
 
 def get_registered_tools():
     tools = {}
@@ -255,110 +258,133 @@ def get_registered_tools():
 
 @tool
 def create_order(data: CreateOrderInput) -> str:
-    """เครื่องมือสำหรับสร้างคำสั่งซื้อสิ้นค้าผ่าน API"""
+    """เครื่องมือสำหรับสร้างคำสั่งซื้อสิ้นค้า"""
     print("LLM is trying to use create_order")
     # print(data.model_dump())
 
-    def generate_shipping_code(prefix="FLASH", suffix="TH", length=9):
-        digits = ''.join(random.choices(string.digits, k=length))
-        return f"{prefix}{digits}{suffix}"
+    check = val_address(
+    province=data.province,
+    district=data.district,
+    subdistrict=data.subdistrict,
+    zipcode=data.zipcode
+    )
 
-    now = datetime.now()
-    po_date = now.strftime("%Y-%m-%d")
-    recalldate = (now + timedelta(days=1)).strftime("%Y-%m-%d")
-    shipping_code = generate_shipping_code()
+    # print("INPUT:", {
+    #     "province": data.province,
+    #     "district": data.district,
+    #     "subdistrict": data.subdistrict,
+    #     "zipcode": data.zipcode
+    # })
+    # print("CHECK RESULT:", check)
 
-    URL = os.getenv("CREATE_ORDER_API")
-    TOKEN = os.getenv("CREATE_ORDER_TOKEN")
+    if not check["ok"]:
+        return json.dumps({
+            "success": False,
+            "error": "ที่อยู่ไม่ถูกต้อง/ไม่พบในฐานข้อมูล",
+            "reason": check["reason"]
+        }, ensure_ascii=False, indent=2)
+    
+    else:
+        def generate_shipping_code(prefix="FLASH", suffix="TH", length=9):
+            digits = ''.join(random.choices(string.digits, k=length))
+            return f"{prefix}{digits}{suffix}"
 
-    headers = {
-        "Authorization": f"Bearer {TOKEN}",
-        "Content-Type": "application/json",
-    }
+        now = datetime.now()
+        po_date = now.strftime("%Y-%m-%d")
+        recalldate = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+        shipping_code = generate_shipping_code()
 
-    payload = {
-        "name": data.name,
-        "tel": data.tel,
-        "po_date": po_date,
+        URL = os.getenv("CREATE_ORDER_API")
+        TOKEN = os.getenv("CREATE_ORDER_TOKEN")
 
-        "discount": data.discount,
-        "discountdetail": data.discountdetail,
-        "vat": "0",
-        "shipping": 50,
-        "pay_amount": data.pay_amount,
-        "pay_by": data.pay_by,
-        "is_payment": "รอชำระเงิน",
-        "payment_date": "",
-
-        "shipping_by": "Flash Express",
-        "shipping_date": "",
-        "shipping_code": shipping_code,
-
-        "dod": "",
-        "remark": "",
-        "poaddress": data.poaddress,
-        "province": data.province,
-        "district": data.district,
-        "subdistrict": data.subdistrict,
-        "zipcode": data.zipcode,
-
-        "postatus": "รอชำระเงิน",
-        "group_id": 1,
-        "recalltime": 1,
-        "recalldate": recalldate,
-
-        "billing_address": data.billing_address or "",
-        "billing_province": data.billing_province or "",
-        "billing_district": data.billing_district or "",
-        "billing_subdistrict": data.billing_subdistrict or "",
-        "billing_zipcode": data.billing_zipcode or "",
-        "tax_id": data.tax_id or "",
-        "taxtype": data.taxtype or "",
-        "media_slot": data.media_slot or "",
-        "tax_name": data.tax_name or "",
-
-        "channel": "Online",
-        "calllist_id": 0,
-        "call_uni_id": "",
-        "social_id": "",
-        "account_id": "",
-        "revised_ref_id": None,
-
-        "sodetail": [item.model_dump() for item in data.sodetail],
-    }
-    db = get_maria_session()
-    try:
-        resp = requests.post(URL, headers=headers, json=payload)
-        response_data = resp.json()
-
-        shipping_code = response_data.get("value", {}).get("shipping_code")
-        so_code = None
-        result = db.execute(
-            text("""
-                SELECT code
-                FROM tbl_so
-                WHERE shipping_code = :sc
-                LIMIT 1
-            """),{"sc": shipping_code}
-        ).fetchone()
-        if result:
-                so_code = result[0]
-
-        final_output = {
-            "api_response": response_data,
-            "Order number": so_code
+        headers = {
+            "Authorization": f"Bearer {TOKEN}",
+            "Content-Type": "application/json",
         }
-        return json.dumps(final_output, ensure_ascii=False, indent=2)
 
-    except Exception as e:
-        return f"เกิดข้อผิดพลาดในการส่งคำสั่งซื้อ: {str(e)}"
-    
-    finally:
-        db.close()
-    
+        payload = {
+            "name": data.name,
+            "tel": data.tel,
+            "po_date": po_date,
+
+            "discount": data.discount,
+            "discountdetail": data.discountdetail,
+            "vat": "0",
+            "shipping": 50,
+            "pay_amount": data.pay_amount,
+            "pay_by": data.pay_by,
+            "is_payment": "รอชำระเงิน",
+            "payment_date": "",
+
+            "shipping_by": "Flash Express",
+            "shipping_date": "",
+            "shipping_code": shipping_code,
+
+            "dod": "",
+            "remark": "",
+            "poaddress": data.poaddress,
+            "province": data.province,
+            "district": data.district,
+            "subdistrict": data.subdistrict,
+            "zipcode": data.zipcode,
+
+            "postatus": "รอชำระเงิน",
+            "group_id": 1,
+            "recalltime": 1,
+            "recalldate": recalldate,
+
+            "billing_address": data.billing_address or "",
+            "billing_province": data.billing_province or "",
+            "billing_district": data.billing_district or "",
+            "billing_subdistrict": data.billing_subdistrict or "",
+            "billing_zipcode": data.billing_zipcode or "",
+            "tax_id": data.tax_id or "",
+            "taxtype": data.taxtype or "",
+            "media_slot": data.media_slot or "",
+            "tax_name": data.tax_name or "",
+
+            "channel": "Online",
+            "calllist_id": 0,
+            "call_uni_id": "",
+            "social_id": "",
+            "account_id": "",
+            "revised_ref_id": None,
+
+            "sodetail": [item.model_dump() for item in data.sodetail],
+        }
+        db = get_maria_session()
+        try:
+            resp = requests.post(URL, headers=headers, json=payload)
+            response_data = resp.json()
+
+            shipping_code = response_data.get("value", {}).get("shipping_code")
+            so_code = None
+            result = db.execute(
+                text("""
+                    SELECT code
+                    FROM tbl_so
+                    WHERE shipping_code = :sc
+                    LIMIT 1
+                """),{"sc": shipping_code}
+            ).fetchone()
+            if result:
+                    so_code = result[0]
+
+            final_output = {
+                "api_response": response_data,
+                "Order number": so_code
+            }
+            return json.dumps(final_output, ensure_ascii=False, indent=2)
+
+        except Exception as e:
+            return f"เกิดข้อผิดพลาดในการส่งคำสั่งซื้อ: {str(e)}"
+        
+        finally:
+            db.close()
+
 @tool
 def how_to_check_out():
-    """เครื่องมือสำหรับบอกขั้นตอนการชำระเงิน"""
+    """เครื่องมือสำหรับบอกขั้นตอนการชำระเงินด้วยการโอนเงิน"""
     print("LLM is trying to use how_to_check_out")
     DATA = """
 ขั้นตอนการชำระเงิน
@@ -404,6 +430,7 @@ def create_ticket(data: CreateTicketInput) -> str:
     try:
         resp = requests.post(URL, headers=headers, json=payload)
         response_data = resp.json()
+        print(response_data)
         return json.dumps(response_data, ensure_ascii=False)
     
     except requests.RequestException as e:

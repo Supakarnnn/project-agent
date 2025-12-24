@@ -2,12 +2,12 @@ import asyncio, logging
 import torch
 from typing import Any, Dict, List, Optional
 from fastapi import Request, Depends, HTTPException, APIRouter, Header
-from fastapi import FastAPI, Response, Query
+from fastapi import FastAPI, Response, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
 from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate
-from agent.model import get_current_llm_setting
+from agent.model import get_current_llm_setting, ChatSession
 from connect_milvus import connect_milvus
 from pymilvus import utility, Collection, connections
 from agent.tool_call import (create_ticket, how_to_check_out, get_registered_tools, track_order_tool, product_search, create_order, cancel_order, product_detail_search, promotion_search)
@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager, suppress
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import get_pg_conn, get_db_session, get_maria_session, get_maria_conn
+from admin_function.live_chat import manager
 import threading
 
 import urllib3
@@ -305,14 +306,50 @@ def ingest_datail():
     except Exception as e:
         raise e
     
+@router.post("/sessions/{session_id}/takeover")
+def takeover_session(session_id: str, db: Session = Depends(get_pg_conn)):
+    session: ChatSession | None = (
+        db.query(ChatSession)
+        .filter(ChatSession.id == session_id)
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session.mode = "human"
+    db.commit()
+
+    return {"success": True, "mode": session.mode}
+
+@router.post("/sessions/{session_id}/back-to-ai")
+def back_to_ai(session_id: str, db: Session = Depends(get_pg_conn)):
+    session: ChatSession | None = (
+        db.query(ChatSession)
+        .filter(ChatSession.id == session_id)
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session.mode = "ai"
+    db.commit()
+
+    return {"success": True, "mode": session.mode}
+
 app.include_router(router)
 
 @app.post("/chat")
-async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), external_session_id: Optional[str] = Header(None, alias="X-Session-Id"), close_now: Optional[str] = Header(None, alias="X-Close-Session")):
+async def chat(
+    chatmessage: RequestMessage,
+    db: Session = Depends(get_pg_conn),
+    external_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+    close_now: Optional[str] = Header(None, alias="X-Close-Session"),
+):
     messages = []
     humanmes = []
     aimanmes = []
-
     autoclose_inactive_sessions(db)
     session_id = get_or_create_session(db, external_session_id)
     
@@ -332,7 +369,49 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
         elif chat.role == 'system':
             messages.append(SystemMessage(content=chat.content))
 
-    #========================================================================================================#
+    #================================ CHECK CALL_CENTER OR AI PATH =====================#
+    session_row: ChatSession | None = (
+        db.query(ChatSession)
+        .filter(ChatSession.id == session_id)
+        .first()
+    )
+    ws_room_id = external_session_id or str(session_id)
+    session_mode = session_row.mode if session_row and session_row.mode else "ai"
+
+    # ถ้าอยู่ในโหมด human → ไม่เรียก AI, broadcast ให้ agent อย่างเดียว
+    if session_mode == "human":
+        print(f"[SESSION {session_id}] mode = human → skip LLM")
+
+        # broadcast ข้อความของลูกค้าให้ agent ผ่าน WebSocket
+        if last_human_message:
+            await manager.broadcast(ws_room_id, {
+                "sender": "user",
+                "content": last_human_message,
+                "source": "http",
+            })
+
+        sentiment = detect_sentiment(last_human_message)
+        if sentiment == "negative":
+            sentiment_content = "ลูกค้าอยู่ในอารมณ์ไม่ดี กรุณาตอบกลับด้วยความสุภาพและช่วยให้เขาใจเย็นลง"
+        elif sentiment == "positive":
+            sentiment_content = "ลูกค้าอารมณ์ดี สามารถใช้ภาษากระชับหรือแสดงความยินดีได้"
+        else:
+            sentiment_content = "ลูกค้าอารมณ์ปกติ ตอบกลับได้ตามปกติ"
+
+        return {
+            "session_id": str(session_id),
+            "human_message": last_human_message,
+            "sentiment_model_message": sentiment_content,
+            "response": None,
+            "sentiment": sentiment,
+            "intent": None,
+            "tool_used": [],
+            "intent_score": None,
+            "ai confident (avg probability)": None,
+            "mode": "human"
+        }
+
+    #================================ INTENT & TOOLS =====================#
     intent_data = load_intents(db)
     state = get_session_state(db, session_id)
     intent_name, tool_name, score, source = resolve_intent_with_context(humanmes, intent_data, state)
@@ -343,32 +422,35 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
         "cancel_order": cancel_order,
         "product_search": product_search,
         "product_detail_search": product_detail_search,
-        "how_to_check_out":how_to_check_out,
+        "how_to_check_out": how_to_check_out,
         "promotion_search": promotion_search,
         "create_ticket": create_ticket
     }
 
-    chosen_tools = [tool_registry["create_ticket"],tool_registry["track_order_tool"],tool_registry["product_search"], tool_registry["product_detail_search"], tool_registry["promotion_search"], tool_registry["create_order"], tool_registry["how_to_check_out"]]
+    chosen_tools = [
+        tool_registry["create_ticket"],
+        tool_registry["track_order_tool"],
+        tool_registry["product_search"],
+        tool_registry["product_detail_search"],
+        tool_registry["promotion_search"],
+        tool_registry["create_order"],
+        tool_registry["how_to_check_out"],
+    ]
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 
-    # print(humanmes)
-    # print(aimanmes)
     print("X-Session-Id received =", external_session_id)
     print(f"[intent]: {intent_name}")
     print(f"[intent score]: {score}")
-    # print(source)
-    # print(chosen_tools)
 
     llm, system_prompt = get_current_llm_setting(db)
     tool_names = ", ".join(_tool_name(t) for t in chosen_tools) if chosen_tools else "None"
 
-    intent_prompt_template = f"""[INTENT MATCHER] {intent_name or 'None'} [ALLOWED_TOOLS] {tool_names}""".strip()
-    #========================================================================================================#
+    intent_prompt_template = ( f"""ระบบจับ Intent อัตโนมัติ: [INTENT MATCHER] {intent_name or 'None'} (เป็นเพียงระบบช่วยเหลือ)""").strip()
+    #=====================================================================#
 
+    #=============================== SENTIMENT ===========================#
     sentiment = detect_sentiment(last_human_message)
-    sentiment_content = ""
-
     if sentiment == "negative":
         sentiment_content = "ลูกค้าอยู่ในอารมณ์ไม่ดี กรุณาตอบกลับด้วยความสุภาพและช่วยให้เขาใจเย็นลง"
     elif sentiment == "positive":
@@ -379,26 +461,24 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     messages.insert(1, SystemMessage(content=f"ระบบจับอารมณ์อัตโนมัติ: [SENTIMENT] {sentiment_content}"))
     messages.insert(2, SystemMessage(content=intent_prompt_template))
     messages.insert(3, SystemMessage(content=f"SESSION_ID_FOR_THIS_CONVERSATION = {session_id}"))
+    #=====================================================================#
 
-    #================================================================================#
+    #============================= LLM AGENT =============================#
     agent = react_agent(llm, chosen_tools, system_prompt)
     result = await agent.ainvoke({"messages": messages, "used_tools": []})
     used_tools = result.get("used_tools", [])
-    print("[TOOLS USED IN THIS CALL] =", used_tools)
 
     final_msg: AIMessage = result["messages"][-1]
     final_result: str = final_msg.content
-    #================================================================================#
+    #=====================================================================#
+
+    #=========================== CONFIDENCE ==============================#
     single_log = final_msg.response_metadata["logprobs"]["content"]
     num_tokens = len(single_log)
     total_logprob = sum(t["logprob"] for t in single_log)
     avg_logprob = total_logprob / num_tokens
     prob = cal_confidence(avg_logprob)
-    # print(num_tokens)
-    # print(total_logprob)
-    # print(avg_logprob)
-    # print(prob)
-    #================================================================================#
+    #=====================================================================#
     
     state.update({
         "active_intent": intent_name,
@@ -409,8 +489,6 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
     update_session_activity(db, session_id, add_msg_count=2)
     if (close_now or "").lower() == "true":
         close_session_now(db, session_id)
-
-    # print(messages)
     
     return {
         "session_id": str(session_id),
@@ -421,7 +499,7 @@ async def chat(chatmessage: RequestMessage, db: Session = Depends(get_pg_conn), 
         "intent": intent_name,
         "tool_used": used_tools,
         "intent_score": float(score) if score else None,
-        "ai confident (avg probability)" : float(prob)
+        "ai confident (avg probability)" : float(prob),
     }
 
 @app.get("/")
@@ -507,6 +585,31 @@ def test_both(pg: Session = Depends(get_pg_conn), maria: Session = Depends(get_m
             pass
 
     return out
+
+@app.websocket("/ws/{session_id}/{role}")
+async def ws_endpoint(websocket: WebSocket, session_id: str, role: str):
+    if role not in ("user", "agent"):
+        await websocket.close()
+        return
+
+    await manager.connect(session_id, role, websocket)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            content = data.get("content", "")
+            sender = data.get("sender", role)
+
+            msg = {
+                "session_id": session_id,
+                "sender": sender,  # user / agent / ai
+                "content": content,
+                "source": "ws",
+            }
+            await manager.broadcast(session_id, msg)
+
+    except WebSocketDisconnect:
+        manager.disconnect(session_id, role, websocket)
 
 
 if __name__ == "__main__":

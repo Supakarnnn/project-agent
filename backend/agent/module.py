@@ -40,7 +40,7 @@ class IntentCreate(BaseModel):
 
 class SoDetail(BaseModel):
     """รายละเอียดสินค้าในคำสั่งซื้อ 1 รายการ"""
-    product_id: int = Field(..., description="รหัสสินค้า")
+    product_id: int = Field(..., description="รหัสสินค้า (ค้นหาได้จากเครื่องมือ product_detail_search) ")
     line: int = Field(..., description="ลำดับบรรทัดในใบสั่งซื้อ")
     QTY: int = Field(..., description="จำนวนชิ้น")
 
@@ -54,11 +54,11 @@ class CreateOrderInput(BaseModel):
     pay_amount: float = Field(..., description="ยอดที่ต้องชำระสุดท้าย")
     pay_by: str = Field(..., description="ช่องทางการชำระเงิน เช่น โอนเงิน, เก็บปลายทาง")
 
-    poaddress: str = Field(..., description="ที่อยู่สำหรับจัดส่ง")
-    province: str = Field(..., description="จังหวัด")
-    district: str = Field(..., description="อำเภอ/เขต")
-    subdistrict: str = Field(..., description="ตำบล/แขวง")
-    zipcode: str = Field(..., description="รหัสไปรษณีย์")
+    poaddress: str = Field(..., description="ที่อยู่สำหรับจัดส่ง (หมู่ที่ (ถ้ามี), ชื่อหมู่บ้าน (ถ้ามี), บ้านเลขที่")
+    province: str = Field(..., description="จังหวัด (ใส่แค่ชื่อ เช่น 'กรุงเทพมหานคร')")
+    district: str = Field(..., description="อำเภอ/เขต (ใส่แค่ชื่อ เช่น 'บางพลัด')")
+    subdistrict: str = Field(..., description="ตำบล/แขวง (ใส่แค่ชื่อ เช่น 'บางยี่ขัน')")
+    zipcode: str = Field(..., description="รหัสไปรษณีย์ (ใส่แค่เลข เช่น '10700')")
 
     #Optional
     billing_address: Optional[str] = Field(None, description="ที่อยู่สำหรับออกบิล/ใบกำกับภาษี (ถ้ามี)")
@@ -87,4 +87,4 @@ class ticketCustomer(BaseModel):
 class CreateTicketInput(BaseModel):
     category_fullname: str = Field(..., description="หมวดหมู่เคส 1.'สอบถาม > โปรโมชัน' 2.'รับแจ้ง' 3.'ร้องเรียน' 4.'เปิดใบสั่งซื้อ'")
     customer: ticketCustomer = Field(..., description="ข้อมูลลูกค้า")
-    detail: str = Field(..., description="รายละเอียดที่ลูกค้าสอบถาม")
+    detail: str = Field(..., description="รายละเอียดที่ลูกค้าอยากสอบถาม")
