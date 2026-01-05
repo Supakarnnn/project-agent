@@ -19,7 +19,7 @@ psycopg2-binary==2.9.10
 passlib==1.7.4
 bcrypt==3.2.2
 PyMySQL==1.1.2
-torch 
+torch
 torchvision
 websockets==15.0.1
 wsproto==1.3.2

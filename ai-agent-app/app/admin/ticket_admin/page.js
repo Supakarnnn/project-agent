@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Navbar from "../nav";
-import { LogoutButton } from "../../Component/logout";
+import Navbar from "../Component/nav";
+import { LogoutButton } from "../Component/logout";
 import styles from "./page.module.css";
 
 export default function Home() {
@@ -14,7 +14,7 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
-  const limit = 10;
+  const limit = 6;
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   useEffect(() => {
@@ -24,7 +24,7 @@ export default function Home() {
         setErrorMsg("");
 
         const res = await fetch(
-          `${API}/admin/open-session?page=${page}&limit=${limit}`,
+          `${API}/admin/tickets?page=${page}&limit=${limit}`,
           { cache: "no-store" }
         );
 
@@ -58,14 +58,14 @@ export default function Home() {
 
       <main className={styles.main}>
         <div className={styles.header}>
-          <h1 className={styles.title}>Session opened in server</h1>
+          <h1 className={styles.title}>Ticket Dashboard</h1>
           <LogoutButton>Logout</LogoutButton>
         </div>
 
         {loading && <p>Loading...</p>}
         {!loading && errorMsg && <p>{errorMsg}</p>}
         {!loading && !errorMsg && tickets.length === 0 && (
-          <p>ไม่มี่ Session ใน server</p>
+          <p>ไม่มี่ Ticket ที่ AI สร้าง</p>
         )}
 
         {!loading && !errorMsg && tickets.length > 0 && (
@@ -74,28 +74,30 @@ export default function Home() {
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>started_at</th>
-                  <th>last_activity_at</th>
-                  <th>closed_at</th>
-                  <th>status</th>
-                  <th>message_count</th>
-                  <th>total_duration_sec</th>
-                  <th>dialog_status</th>
-                  <th>mode</th>
+                  <th>Code</th>
+                  <th>ชื่อ</th>
+                  <th>เบอร์</th>
+                  <th>อีเมล</th>
+                  <th>หมวดหมู่</th>
+                  <th>รายละเอียด</th>
+                  <th>สร้างเมื่อ</th>
                 </tr>
               </thead>
               <tbody>
                 {tickets.map((t) => (
                   <tr key={t.id}>
                     <td>{t.id}</td>
-                    <td>{t.started_at? new Date(t.started_at).toLocaleString("th-TH"):"-"}</td>
-                    <td>{t.last_activity_at ? new Date(t.last_activity_at).toLocaleString("th-TH"):"-"}</td>
-                    <td>{t.closed_at ? new Date(t.closed_at).toLocaleString("th-TH"):"-"}</td>
-                    <td>{t.status}</td>
-                    <td>{t.message_count}</td>
-                    <td>{t.total_duration_sec}</td>
-                    <td>{t.dialog_status}</td>
-                    <td>{t.mode}</td>
+                    <td>{t.code}</td>
+                    <td>{t.name || "-"}</td>
+                    <td>{t.tel || "-"}</td>
+                    <td>{t.email || "-"}</td>
+                    <td>{t.category_fullname || "-"}</td>
+                    <td>{t.detail || "-"}</td>
+                    <td>
+                      {t.created_at
+                        ? new Date(t.created_at).toLocaleString("th-TH")
+                        : "-"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

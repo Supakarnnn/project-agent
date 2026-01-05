@@ -81,8 +81,6 @@ class ticketCustomer(BaseModel):
     name: str = Field(..., description="ชื่อลูกค้า")
     tel: str = Field(..., description="เบอร์โทรลูกค้า")
     email: str = Field(..., description="อีเมลลูกค้า")
-    birthdate: str = Field(..., description="วันเกิดลูกค้า รูปแบบ YYYY-MM-DD")
-    national_id: str = Field(..., description="เลขบัตรประชาชนลูกค้า")
 
 class CreateTicketInput(BaseModel):
     category_fullname: str = Field(..., description="หมวดหมู่เคส 1.'สอบถาม > โปรโมชัน' 2.'รับแจ้ง' 3.'ร้องเรียน' 4.'เปิดใบสั่งซื้อ'")

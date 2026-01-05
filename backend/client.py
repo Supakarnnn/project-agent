@@ -338,6 +338,83 @@ def back_to_ai(session_id: str, db: Session = Depends(get_pg_conn)):
 
     return {"success": True, "mode": session.mode}
 
+@router.get("/tickets")
+def get_tickets(db: Session = Depends(get_pg_conn), page: int = 1, limit: int = 10):
+    offset = (page - 1) * limit
+    res = db.execute(
+        text("""
+            SELECT *
+            FROM tickets
+            WHERE is_active = true
+            ORDER BY id DESC
+            LIMIT :limit OFFSET :offset
+        """),
+        {
+            "limit": limit,
+            "offset": offset,
+        },
+    ).mappings().all()
+
+    total = db.execute(
+        text("SELECT COUNT(*) FROM tickets WHERE is_active = true")
+    ).scalar()
+
+    if not res:
+        return "Not Found"
+    return {
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "items": [dict(r) for r in res],
+    }
+
+@router.post("/tickets/{ticket_id}/close")
+def close_ticket(ticket_id: int, db: Session = Depends(get_pg_conn)):
+    res = db.execute(
+        text("""
+            UPDATE tickets
+            SET is_active = false
+            WHERE id = :id
+            RETURNING id
+        """),
+        {"id": ticket_id},
+    ).fetchone()
+
+    if not res:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    db.commit()
+    return {"ok": True, "ticket_id": ticket_id}
+
+@router.get("/open-session")
+def open_session(db: Session = Depends(get_pg_conn), page: int = 1, limit: int = 10):
+    offset = (page - 1) * limit
+    res = db.execute(
+        text("""
+            SELECT *
+            FROM chat_sessions
+            ORDER BY id DESC
+            LIMIT :limit OFFSET :offset
+        """),
+        {
+            "limit": limit,
+            "offset": offset,
+        },
+    ).mappings().all()
+
+    total = db.execute(
+        text("SELECT COUNT(*) FROM chat_sessions")
+    ).scalar()
+
+    if not res:
+        return "Not Found"
+    return {
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "items": [dict(r) for r in res],
+    }
+
 app.include_router(router)
 
 @app.post("/chat")

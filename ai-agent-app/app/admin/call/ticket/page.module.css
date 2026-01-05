@@ -1,0 +1,218 @@
+.layout {
+  display: flex;
+  min-height: 100vh;
+  font-family: sans-serif;
+}
+
+.main {
+  flex: 1;
+  padding: 20px;
+  background: #f7fafc;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+}
+
+.table th,
+.table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: left;
+}
+
+.table th {
+  background: #f5f5f5;
+}
+
+.pagination {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  align-items: center;
+}
+
+.pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.openBtn {
+  padding: 6px 12px;
+  border: none;
+  background: green;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.openBtn:hover {
+  background: greenyellow;
+}
+
+/* ===== Modal Overlay ===== */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 9999;
+}
+
+/* ===== Modal Card ===== */
+.modal {
+  width: 100%;
+  max-width: 920px;
+  height: min(80vh, 680px);
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== Header ===== */
+.modalHeader {
+  padding: 14px 16px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modalTitle {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.modalSub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #666;
+}
+
+.modalActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.closeBtn {
+  border: none;
+  background: #e53935;
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.closeBtn:hover {
+  opacity: 0.95;
+}
+
+.closeBtn:active {
+  transform: translateY(1px);
+}
+
+/* ===== Chat Box ===== */
+.chatBox {
+  flex: 1;
+  padding: 14px 16px;
+  overflow: auto;
+  background: #fafafa;
+}
+
+/* Row wrapper */
+.msgRow {
+  display: flex;
+  margin: 8px 0;
+}
+
+/* Left (user/ai) */
+.msgLeft {
+  max-width: 75%;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: #222;
+  line-height: 1.35;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* Right (agent) */
+.msgRight {
+  margin-left: auto;
+  max-width: 75%;
+  background: #e9f5ff;
+  border: 1px solid #cfe9ff;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: #0b2a3a;
+  line-height: 1.35;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* ===== Input Row ===== */
+.chatInputRow {
+  padding: 12px 16px;
+  border-top: 1px solid #eee;
+  display: flex;
+  gap: 10px;
+  background: #fff;
+}
+
+.chatInput {
+  flex: 1;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+  font-size: 14px;
+}
+
+.chatInput:focus {
+  border-color: #9ecbff;
+  box-shadow: 0 0 0 3px rgba(120, 180, 255, 0.25);
+}
+
+.sendBtn {
+  border: none;
+  background: #1976d2;
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sendBtn:hover {
+  opacity: 0.95;
+}
+
+.sendBtn:active {
+  transform: translateY(1px);
+}

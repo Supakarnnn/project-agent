@@ -4,13 +4,13 @@ import inspect
 import string, json, random
 from typing import Optional, List
 from langchain.tools import tool
-from agent.model import embedding_model
+from agent.model import embedding_model, save_ticket_pg
 from langchain_milvus import Milvus
 from sqlalchemy import text
 import requests
 from datetime import datetime, timedelta
 from agent.module import CreateOrderInput, CreateTicketInput
-from database import get_maria_session
+from database import get_maria_session, get_db_session
 from agent.check_address_data import val_address
 
 dotenv.load_dotenv()
@@ -396,13 +396,15 @@ def how_to_check_out():
     return DATA
 
 @tool
-def create_ticket(data: CreateTicketInput) -> str:
+def create_ticket(data: CreateTicketInput, session_id: str) -> str:
     """เครื่องมือสำหรับสร้าง ticket ผ่าน API
     *ใช้เครื่องมือนี้เฉพาะตอนที่คุณให้บริการลูกค้าไม่ได้หรือลูกค้าต้องการคุยกับเจ้าหน้าที่ที่เป็นคน*
+    Input: data = ข้อมูลตั๋ว, session_id = session id ของแชทที่กำลังสนทนา
     Output: code = หมายเลขตั๋ว
     """
 
     print("LLM is trying to use create_ticket")
+    print(session_id)
     print(data.model_dump())
 
     URL = os.getenv("CREATE_TICKET_API")
@@ -427,11 +429,56 @@ def create_ticket(data: CreateTicketInput) -> str:
         "detail": data.detail
     }
 
+    external_ok = False
+    external_raw = None
+    external_error = None
+    ticket_code = None
+
     try:
         resp = requests.post(URL, headers=headers, json=payload)
-        response_data = resp.json()
-        print(response_data)
-        return json.dumps(response_data, ensure_ascii=False)
+        resp.raise_for_status()
+        external_raw = resp.json()
+
+        if external_raw.get("success") is True:
+            external_ok = True
+            ticket_code = external_raw.get("code")
+            # print(external_raw)
+            # print(ticket_code)
+        else:
+            external_error = external_raw.get("msg")
     
     except requests.RequestException as e:
+        external_error = str(e)
         return f"สร้าง ticket ล้มเหลว: {str(e)}"
+
+    #==========================================#
+    if external_ok:
+        db = None
+        try:
+            db = get_db_session()
+            db_result = save_ticket_pg(
+                db=db,
+                session_id=session_id,
+                data=data,
+                ticket_code=ticket_code,
+            )
+            # print(db_result)
+
+        except Exception as e:
+            db_result = {"ok": False, "error": str(e)}
+
+        finally:
+            if db is not None:
+                db.close()
+
+        result = {
+            "external": {
+                "ok": external_ok,
+                "error": external_error,
+                "raw": external_raw,
+            },
+            "db": db_result
+        }
+        print(result)
+        return json.dumps(result, ensure_ascii=False)
+    #==========================================#
