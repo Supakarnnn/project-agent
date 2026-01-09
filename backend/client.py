@@ -10,10 +10,10 @@ from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate
 from agent.model import get_current_llm_setting, ChatSession
 from connect_milvus import connect_milvus
 from pymilvus import utility, Collection, connections
-from agent.tool_call import (create_ticket, how_to_check_out, get_registered_tools, track_order_tool, product_search, create_order, cancel_order, product_detail_search, promotion_search)
+from agent.tool_call import (create_ticket, get_registered_tools, track_order_tool, product_search, create_order, cancel_order, product_detail_search, promotion_search)
 from intents.intent_matcher import load_intents, resolve_intent_with_context
 from intents.runtime import get_session_state, save_session_state
-from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now
+from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now, chat_message_log
 from sentiment_model.s_model import detect_sentiment
 from auth_admin.auth import verify_password, hash_password
 from agent.confident_cal import cal_confidence
@@ -429,6 +429,7 @@ async def chat(
     aimanmes = []
     autoclose_inactive_sessions(db)
     session_id = get_or_create_session(db, external_session_id)
+    log_session_id = str(session_id)
     
     last_human_message = ""
     for m in reversed(chatmessage.messages):
@@ -446,6 +447,7 @@ async def chat(
         elif chat.role == 'system':
             messages.append(SystemMessage(content=chat.content))
 
+    print("api message recived")
     #================================ CHECK CALL_CENTER OR AI PATH =====================#
     session_row: ChatSession | None = (
         db.query(ChatSession)
@@ -489,9 +491,14 @@ async def chat(
         }
 
     #================================ INTENT & TOOLS =====================#
+    print("intent starting")
+    print("intent loading")
     intent_data = load_intents(db)
+    print("intent loading sucessful")
     state = get_session_state(db, session_id)
+    print("finding intent")
     intent_name, tool_name, score, source = resolve_intent_with_context(humanmes, intent_data, state)
+    print("finding intent sucessful")
 
     tool_registry = {
         "track_order_tool": track_order_tool,
@@ -499,7 +506,6 @@ async def chat(
         "cancel_order": cancel_order,
         "product_search": product_search,
         "product_detail_search": product_detail_search,
-        "how_to_check_out": how_to_check_out,
         "promotion_search": promotion_search,
         "create_ticket": create_ticket
     }
@@ -511,36 +517,37 @@ async def chat(
         tool_registry["product_detail_search"],
         tool_registry["promotion_search"],
         tool_registry["create_order"],
-        tool_registry["how_to_check_out"],
     ]
+
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 
-    print("X-Session-Id received =", external_session_id)
-    print(f"[intent]: {intent_name}")
-    print(f"[intent score]: {score}")
+    # print("session received =", external_session_id)
+    # print(f"intent: {intent_name}")
+    # print(f"intent score: {score}")
 
     llm, system_prompt = get_current_llm_setting(db)
-    tool_names = ", ".join(_tool_name(t) for t in chosen_tools) if chosen_tools else "None"
+    # tool_names = ", ".join(_tool_name(t) for t in chosen_tools) if chosen_tools else "None"
 
-    intent_prompt_template = ( f"""ระบบจับ Intent อัตโนมัติ: [INTENT MATCHER] {intent_name or 'None'} (เป็นเพียงระบบช่วยเหลือ)""").strip()
+    intent_prompt_template = ( f"""ระบบจับ Intent อัตโนมัติ: [INTENT MATCHER] {intent_name or 'None'}""").strip()
     #=====================================================================#
 
     #=============================== SENTIMENT ===========================#
     sentiment = detect_sentiment(last_human_message)
     if sentiment == "negative":
-        sentiment_content = "ลูกค้าอยู่ในอารมณ์ไม่ดี กรุณาตอบกลับด้วยความสุภาพและช่วยให้เขาใจเย็นลง"
+        sentiment_content = "ลูกค้าอยู่ในอารมณ์ไม่ดี กรุณาตอบกลับด้วยความสุภาพและช่วยให้ลูกค้าใจเย็นลง"
     elif sentiment == "positive":
-        sentiment_content = "ลูกค้าอารมณ์ดี สามารถใช้ภาษากระชับหรือแสดงความยินดีได้"
+        sentiment_content = "ลูกค้าอารมณ์ดี"
     else:
         sentiment_content = "ลูกค้าอารมณ์ปกติ ตอบกลับได้ตามปกติ"
 
     messages.insert(1, SystemMessage(content=f"ระบบจับอารมณ์อัตโนมัติ: [SENTIMENT] {sentiment_content}"))
     messages.insert(2, SystemMessage(content=intent_prompt_template))
-    messages.insert(3, SystemMessage(content=f"SESSION_ID_FOR_THIS_CONVERSATION = {session_id}"))
+    messages.insert(3, SystemMessage(content=f"SESSION_ID FOR THIS CONVERSATION = {session_id}"))
     #=====================================================================#
 
     #============================= LLM AGENT =============================#
+    print("agent recived message")
     agent = react_agent(llm, chosen_tools, system_prompt)
     result = await agent.ainvoke({"messages": messages, "used_tools": []})
     used_tools = result.get("used_tools", [])
@@ -566,6 +573,20 @@ async def chat(
     update_session_activity(db, session_id, add_msg_count=2)
     if (close_now or "").lower() == "true":
         close_session_now(db, session_id)
+
+    print("agent response message")
+    
+    chat_message_log(
+        db,
+        session_id=log_session_id,
+        human_message=last_human_message,
+        ai_message=final_result,
+        sentiment=sentiment,
+        intent_name=intent_name,
+        intent_score=float(score),
+        used_tools=used_tools or [],
+        ai_confident=float(prob)
+    )
     
     return {
         "session_id": str(session_id),

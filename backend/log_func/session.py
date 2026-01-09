@@ -1,4 +1,6 @@
 from sqlalchemy import text
+from sqlalchemy.orm import Session
+import json
 
 SESSION_TIMEOUT_MIN = 15
 
@@ -132,4 +134,38 @@ def close_session_now(db, session_id: str):
             total_duration_sec = EXTRACT(EPOCH FROM (now() - started_at))::INT
         WHERE id = :sid AND status = 'open'
     """), {"sid": session_id})
+    db.commit()
+
+def chat_message_log(
+    db: Session,
+    *,
+    session_id: str,
+    human_message: str | None,
+    ai_message: str | None,
+    sentiment: str | None,
+    intent_name: str | None,
+    intent_score: float | None,
+    used_tools: list | None,
+    ai_confident: float | None,
+):
+    db.execute(
+        text("""
+            INSERT INTO public.chat_messages
+            (session_id, human_message, ai_message, sentiment,
+            intent_name, intent_score, ai_confident, used_tools)
+            VALUES
+            (:session_id, :human_message, :ai_message, :sentiment,
+            :intent_name, :intent_score, :ai_confident, CAST(:used_tools AS jsonb))
+        """),
+        {
+            "session_id": session_id,
+            "human_message": human_message,
+            "ai_message": ai_message,
+            "sentiment": sentiment,
+            "intent_name": intent_name,
+            "intent_score": intent_score,
+            "ai_confident": ai_confident,
+            "used_tools": json.dumps(used_tools or []),
+        }
+    )
     db.commit()

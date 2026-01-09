@@ -383,19 +383,6 @@ def create_order(data: CreateOrderInput) -> str:
             db.close()
 
 @tool
-def how_to_check_out():
-    """เครื่องมือสำหรับบอกขั้นตอนการชำระเงินด้วยการโอนเงิน"""
-    print("LLM is trying to use how_to_check_out")
-    DATA = """
-ขั้นตอนการชำระเงิน
-1. ไปที่หน้าชำระเงิน (ด้านขวาบนของหน้าจอ หัวข้อ 'Payment')
-2. นำ รหัสคำสั่งซื้อ (SO.XXXXXX-XXXXX) กรอกตรงช่องชำระเงินด้วย รหัสคำสั่งซื้อ
-3. ทำการชำระเงิน
-4. เมื่อชำระเงินแล้วให้กดปุ่ม "ยืนยันการชำระเงิน"
-"""
-    return DATA
-
-@tool
 def create_ticket(data: CreateTicketInput, session_id: str) -> str:
     """เครื่องมือสำหรับสร้าง ticket ผ่าน API
     *ใช้เครื่องมือนี้เฉพาะตอนที่คุณให้บริการลูกค้าไม่ได้หรือลูกค้าต้องการคุยกับเจ้าหน้าที่ที่เป็นคน*
