@@ -10,7 +10,7 @@ export default function Navbar() {
         <li><a href="/admin/Rag_system_v2">Ai Knowledge</a></li>
         <li><a href="/admin/Intent">Ai Tool</a></li>
         <li><a href="/admin/open_session">Open Chat Session</a></li>
-        <li><a href="/admin/session_log">Chat log (On going)</a></li>
+        <li><a href="/admin/chat_message_log">Chat message log</a></li>
         <li><a href="/admin/ticket_admin">Ticket</a></li>
         <li><a href="/admin/Config_ai">Settings Ai</a></li>
       </ul>

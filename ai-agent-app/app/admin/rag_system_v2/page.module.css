@@ -225,7 +225,32 @@
   cursor: pointer;
 }
 
+.status {
+  padding: 6px 10px;
+  color: #facc15;
+  font-size: 13px;
+}
 
+.success {
+  padding: 6px 10px;
+  color: #22c55e;
+  font-size: 13px;
+}
+
+.error {
+  padding: 6px 10px;
+  color: #ef4444;
+  font-size: 13px;
+}
+
+.divider {
+  margin: 12px 0 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
 @media (max-width: 900px) {
   .contentGrid { grid-template-columns: 1fr; }

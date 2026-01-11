@@ -7,8 +7,25 @@ import styles from "./page.module.css";
 
 const SEARCH_FIELDS = ["ProductName", "ProductName_Eng", "name", "name_eng", "code"];
 
+function apiUrl(path, params) {
+  const base = (process.env.NEXT_PUBLIC_API_URL || "").trim();
+  const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+  const cleanBase = base.replace(/\/+$/, "");
+  const cleanPath = String(path || "").replace(/^\/+/, "");
+  const u = new URL(`${cleanBase}/${cleanPath}`, origin);
+
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => u.searchParams.set(k, String(v)));
+  }
+  return u.toString();
+}
+
 export default function RagSystem() {
   const API = process.env.NEXT_PUBLIC_API_URL;
+
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
 
   const [loadingList, setLoadingList] = useState(true);
   const [listErr, setListErr] = useState("");
@@ -21,12 +38,36 @@ export default function RagSystem() {
 
   const [query, setQuery] = useState("");
   const [allRows, setAllRows] = useState(null);
-  const [loadingAll, setLoadingAll] = useState(false); 
+  const [loadingAll, setLoadingAll] = useState(false);
   const [allErr, setAllErr] = useState("");
   const [clientPage, setClientPage] = useState(1);
   const CLIENT_PAGE_SIZE = 20;
 
   const [hiddenCols, setHiddenCols] = useState(["id", "pk", "text", "notes"]);
+
+  const callAPI = async (endpoint) => {
+    try {
+      setLoading(true);
+      setError(null);
+      setResult(null);
+
+      const res = await fetch(`${API}${endpoint}`, {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || "API error");
+      }
+      window.location.reload();
+      setResult(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   //list collection
   useEffect(() => {
@@ -53,10 +94,12 @@ export default function RagSystem() {
       setPanelErr("");
       try {
         const ps = pageSize ?? (rowsResp ? rowsResp.page_size : 20);
-        const url = new URL(`${API}/admin/collections/${encodeURIComponent(name)}/rows`);
-        url.searchParams.set("page", String(page));
-        url.searchParams.set("page_size", String(ps));
-        const data = await fetch(url.toString()).then((r) => r.json());
+        const data = await fetch(
+          apiUrl(`/admin/collections/${encodeURIComponent(name)}/rows`, {
+            page,
+            page_size: ps,
+          })
+        ).then((r) => r.json());
         setRowsResp(data);
       } catch (e) {
         setPanelErr(e?.message || "load rows error");
@@ -67,16 +110,18 @@ export default function RagSystem() {
     [API, rowsResp]
   );
 
-  //fetch all page
+  // fetch all page
   const fetchAllPages = useCallback(
     async (name) => {
       setAllErr("");
       setLoadingAll(true);
       try {
-        const firstUrl = new URL(`${API}/admin/collections/${encodeURIComponent(name)}/rows`);
-        firstUrl.searchParams.set("page", "1");
-        firstUrl.searchParams.set("page_size", "100");
-        const first = await fetch(firstUrl.toString()).then((r) => r.json());
+        const first = await fetch(
+          apiUrl(`/admin/collections/${encodeURIComponent(name)}/rows`, {
+            page: 1,
+            page_size: 100,
+          })
+        ).then((r) => r.json());
 
         const total = first?.total ?? 0;
         const pageSize = 1000;
@@ -86,10 +131,12 @@ export default function RagSystem() {
         if (pageSize !== 100) {
           acc = [];
           for (let p = 1; p <= pages; p++) {
-            const u = new URL(`${API}/admin/collections/${encodeURIComponent(name)}/rows`);
-            u.searchParams.set("page", String(p));
-            u.searchParams.set("page_size", String(pageSize));
-            const j = await fetch(u.toString()).then((r) => r.json());
+            const j = await fetch(
+              apiUrl(`/admin/collections/${encodeURIComponent(name)}/rows`, {
+                page: p,
+                page_size: pageSize,
+              })
+            ).then((r) => r.json());
             acc = acc.concat(j?.rows || []);
           }
         }
@@ -185,7 +232,7 @@ export default function RagSystem() {
           <aside className={styles.sidebar}>
             <div className={styles.sectionTitle}>Collections</div>
             {loadingList && <div className={styles.muted}>กำลังโหลด…</div>}
-            {listErr && <div className={styles.error}>⚠ {listErr}</div>}
+            {listErr && <div className={styles.error}>{listErr}</div>}
             {!loadingList && !listErr && (
               <ul className={styles.list}>
                 {collections.map((c) => (
@@ -198,10 +245,55 @@ export default function RagSystem() {
                     </button>
                   </li>
                 ))}
+
+                {/* Divider */}
+                <li className={styles.divider}>Update Panel</li>
+
+                <li>
+                  <button
+                    className={`${styles.listItem} ${styles.updateBtn}`}
+                    disabled={loading}
+                    onClick={() => callAPI("/admin/ingest_promotion")}
+                  >
+                    Update Promotion
+                  </button>
+                </li>
+
+                <li>
+                  <button
+                    className={`${styles.listItem} ${styles.updateBtn}`}
+                    disabled={loading}
+                    onClick={() => callAPI("/admin/ingest_product")}
+                  >
+                    Update Product
+                  </button>
+                </li>
+
+                <li>
+                  <button
+                    className={`${styles.listItem} ${styles.updateBtn}`}
+                    disabled={loading}
+                    onClick={() => callAPI("/admin/ingest_detail")}
+                  >
+                    Update Detail
+                  </button>
+                </li>
+
+                {loading && (
+                  <li className={styles.status}>กำลังประมวลผล...</li>
+                )}
+
+                {result && (
+                  <li className={styles.success}>Update Successful</li>
+                )}
+
+                {error && (
+                  <li className={styles.error}>{error}</li>
+                )}
               </ul>
             )}
-          </aside>
 
+          </aside>
           {/* Panel */}
           <section className={styles.panel}>
             {!selected && (
@@ -239,7 +331,7 @@ export default function RagSystem() {
                       {loadingAll
                         ? "กำลังดึงข้อมูล"
                         : searching && allRows
-                        ? `ผลลัพธ์ ${filteredAll.length} จากทั้งหมด ${allRows.length}`: ""}
+                          ? `ผลลัพธ์ ${filteredAll.length} จากทั้งหมด ${allRows.length}` : ""}
                     </span>
                   </div>
                   {allErr && <div className={styles.error} style={{ marginTop: 8 }}>⚠ {allErr}</div>}

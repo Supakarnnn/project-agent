@@ -41,6 +41,11 @@ export default function Home() {
   const dlgRef = useRef(null);
   const delDlgRef = useRef(null);
 
+  const [tpPage, setTpPage] = useState(1);
+  const [tpTotal, setTpTotal] = useState(0);
+  const limit = 10;
+  const totalPages = Math.max(1, Math.ceil(tpTotal / limit));
+
   useEffect(() => {
     if (!dlgRef.current) return;
     if (showAdd) dlgRef.current.showModal();
@@ -85,27 +90,42 @@ export default function Home() {
 
     (async () => {
       try {
-        const resp = await fetch(`${API}/admin/training-phrases`, {
-          headers: { Accept: "application/json" },
-        });
+        setLoadingPhrase(true);
+        setErrPhrase("");
+
+        const resp = await fetch(
+          `${API}/admin/training-phrases?page=${tpPage}&limit=${limit}`,
+          { headers: { Accept: "application/json" }, cache: "no-store" }
+        );
+
         if (!resp.ok) {
           const p = await resp.json().catch(() => ({}));
           throw new Error(p.detail || `HTTP ${resp.status}`);
         }
+
         const data = await resp.json();
-        if (Array.isArray(data)) {
-          setPhrase(data);
-        } else {
+
+        // backend คืน "Not Found"
+        if (typeof data === "string") {
           setPhrase([]);
-          setErrPhrase(typeof data === "string" ? data : "No data");
+          setTpTotal(0);
+          return;
         }
+
+        // backend คืน object {items,total,...}
+        const items = Array.isArray(data.items) ? data.items : [];
+        setPhrase(items);
+        setTpTotal(Number.isFinite(data.total) ? data.total : 0);
       } catch (e) {
-        setErrPhrase(e.message || "โหลด Phrase ไม่สำเร็จ");
+        setPhrase([]);
+        setTpTotal(0);
+        setErrPhrase(e?.message || "โหลด Phrase ไม่สำเร็จ");
       } finally {
         setLoadingPhrase(false);
       }
     })();
-  }, [API]);
+
+  }, [API, tpPage]);
 
   const toolByIntentId = useMemo(() => {
     const m = {};
@@ -521,77 +541,99 @@ export default function Home() {
               </div>
             </form>
           </dialog>
-
           {loadingPhrase ? (
             <p>กำลังโหลด Phrase...</p>
           ) : errPhrase ? (
             <div style={{ color: "crimson", marginTop: 8 }}>{errPhrase}</div>
           ) : (
-            <table style={{ marginTop: 8, borderCollapse: "collapse", width: "100%" }}>
-              <thead>
-                <tr>
-                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "center", padding: 8 }}>
-                    <input
-                      type="checkbox"
-                      checked={tpSelectAll}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setTpSelectAll(checked);
-                        const sorted = [...phrase].sort((a, b) => {
-                          const A = (toolByIntentId[a.intent_id] || "").toLowerCase();
-                          const B = (toolByIntentId[b.intent_id] || "").toLowerCase();
-                          return A.localeCompare(B);
-                        });
-                        setTpSelectedIds(checked ? sorted.map((p) => p.tp_id) : []);
-                      }}
-                    />
-                  </th>
-                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>tool_name</th>
-                  <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Phrase</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const sortedPhrase = [...phrase].sort((a, b) => {
-                    const nameA = (toolByIntentId[a.intent_id] || "").toLowerCase();
-                    const nameB = (toolByIntentId[b.intent_id] || "").toLowerCase();
-                    return nameA.localeCompare(nameB);
-                  });
+            <>
+              <table style={{ marginTop: 8, borderCollapse: "collapse", width: "100%" }}>
+                <thead>
+                  <tr>
+                    <th style={{ borderBottom: "1px solid #ccc", textAlign: "center", padding: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={tpSelectAll}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setTpSelectAll(checked);
+                          const sorted = [...phrase].sort((a, b) => {
+                            const A = (toolByIntentId[a.intent_id] || "").toLowerCase();
+                            const B = (toolByIntentId[b.intent_id] || "").toLowerCase();
+                            return A.localeCompare(B);
+                          });
+                          setTpSelectedIds(checked ? sorted.map((p) => p.tp_id) : []);
+                        }}
+                      />
+                    </th>
+                    <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>tool_name</th>
+                    <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Phrase</th>
+                  </tr>
+                </thead>
 
-                  if (sortedPhrase.length === 0) {
-                    return (
-                      <tr>
-                        <td colSpan={3} style={{ padding: 8 }}>ไม่พบข้อมูล</td>
-                      </tr>
-                    );
-                  }
+                <tbody>
+                  {(() => {
+                    const sortedPhrase = [...phrase].sort((a, b) => {
+                      const nameA = (toolByIntentId[a.intent_id] || "").toLowerCase();
+                      const nameB = (toolByIntentId[b.intent_id] || "").toLowerCase();
+                      return nameA.localeCompare(nameB);
+                    });
 
-                  return sortedPhrase.map((it) => {
-                    const tool = toolByIntentId[it.intent_id] || "-";
-                    const checked = tpSelectedIds.includes(it.tp_id);
-                    return (
-                      <tr key={it.tp_id}>
-                        <td style={{ borderBottom: "1px solid #eee", textAlign: "center" }}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              if (e.target.checked)
-                                setTpSelectedIds((prev) => [...prev, it.tp_id]);
-                              else
-                                setTpSelectedIds((prev) => prev.filter((id) => id !== it.tp_id));
-                            }}
-                          />
-                        </td>
-                        <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{tool}</td>
-                        <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.phrase}</td>
-                      </tr>
-                    );
-                  });
-                })()}
-              </tbody>
-            </table>
-          )} </div>
+                    if (sortedPhrase.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={3} style={{ padding: 8 }}>ไม่พบข้อมูล</td>
+                        </tr>
+                      );
+                    }
+
+                    return sortedPhrase.map((it) => {
+                      const tool = toolByIntentId[it.intent_id] || "-";
+                      const checked = tpSelectedIds.includes(it.tp_id);
+                      return (
+                        <tr key={it.tp_id}>
+                          <td style={{ borderBottom: "1px solid #eee", textAlign: "center" }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                if (e.target.checked) setTpSelectedIds((prev) => [...prev, it.tp_id]);
+                                else setTpSelectedIds((prev) => prev.filter((id) => id !== it.tp_id));
+                              }}
+                            />
+                          </td>
+                          <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{tool}</td>
+                          <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{it.phrase}</td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+
+              <div className={styles.pagination}>
+                <button
+                  onClick={() => setTpPage((p) => Math.max(1, p - 1))}
+                  disabled={tpPage <= 1}
+                >
+                  ◀ ก่อนหน้า
+                </button>
+
+                <span>
+                  หน้า {tpPage} / {totalPages} (ทั้งหมด {tpTotal})
+                </span>
+
+                <button
+                  onClick={() => setTpPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={tpPage >= totalPages}
+                >
+                  ถัดไป ▶
+                </button>
+              </div>
+            </>
+          )}
+
+        </div>
       </main>
     </div>
   );

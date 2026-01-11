@@ -136,6 +136,7 @@ def close_session_now(db, session_id: str):
     """), {"sid": session_id})
     db.commit()
 
+
 def chat_message_log(
     db: Session,
     *,

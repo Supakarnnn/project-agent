@@ -5,7 +5,6 @@ from sqlalchemy import text
 from sentence_transformers import SentenceTransformer
 from agent.model import embedding_model
 
-# ===== Config =====
 GLOBAL_MIN_CONFIDENCE = 0.60
 STICKY_MIN_CONFIDENCE = 0.50
 OVERRIDE_MARGIN = 0.08

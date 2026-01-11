@@ -1,5 +1,5 @@
 import asyncio, logging
-import torch
+import torch, json
 from typing import Any, Dict, List, Optional
 from fastapi import Request, Depends, HTTPException, APIRouter, Header
 from fastapi import FastAPI, Response, Query, WebSocket, WebSocketDisconnect
@@ -14,6 +14,8 @@ from agent.tool_call import (create_ticket, get_registered_tools, track_order_to
 from intents.intent_matcher import load_intents, resolve_intent_with_context
 from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now, chat_message_log
+from log_func.sql_text import ORDER_COMPLETION_SQL, TICKET_CREATE_SQL,AVG_AI_CON_SQL, UNPROCESSED_MESSAGES, INSERT_MESSAGE_INSIGHT, KEYWORD_TOPIC, AVG_SESSION_TIME
+from log_func.message_insight import extract_insight_with_llm, normalize_insight
 from sentiment_model.s_model import detect_sentiment
 from auth_admin.auth import verify_password, hash_password
 from agent.confident_cal import cal_confidence
@@ -155,11 +157,25 @@ def get_intent(db: Session = Depends(get_pg_conn)):
     return [dict(r) for r in res]
 
 @router.get("/training-phrases")
-def get_tp(db: Session = Depends(get_pg_conn)):
-    res = db.execute(text("SELECT tp_id, intent_id, phrase FROM training_phrases")).mappings().all()
+def get_tp(db: Session = Depends(get_pg_conn), page: int = 1, limit: int = 10):
+    offset = (page - 1) * limit
+    res = db.execute(text("SELECT tp_id, intent_id, phrase FROM training_phrases LIMIT :limit OFFSET :offset"),
+        {
+            "limit": limit,
+            "offset": offset,
+        },).mappings().all()
+    
+    total = db.execute(
+        text("SELECT COUNT(*) FROM training_phrases")
+    ).scalar()
     if not res:
         return "Not Found"
-    return [dict(r) for r in res]
+    return {
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "items": [dict(r) for r in res],
+    }
 
 @router.post("/create-intents")
 def create_intent(req: IntentCreate, db: Session = Depends(get_pg_conn)):
@@ -280,9 +296,11 @@ def ingest_promotion():
         raise HTTPException(status_code=409, detail="Ingestion is already running")
     try:
         n = ingest_promotion_product()
-        return {"response":"sucess","update": n + "item"}
+        return {"response":"success", "update": n}
     except Exception as e:
         raise e
+    finally:
+        _ingest_lock.release()
     
 @router.post("/ingest_product")
 def ingest_product():
@@ -291,9 +309,11 @@ def ingest_product():
         raise HTTPException(status_code=409, detail="Ingestion is already running")
     try:
         n = ingest_all_product()
-        return {"response":"sucess","update": n + "item"}
+        return {"response":"success", "update": n}
     except Exception as e:
         raise e
+    finally:
+        _ingest_lock.release()
     
 @router.post("/ingest_detail")
 def ingest_datail():
@@ -302,9 +322,11 @@ def ingest_datail():
         raise HTTPException(status_code=409, detail="Ingestion is already running")
     try:
         n = ingest_detail_product()
-        return {"response":"sucess","update": n + "item"}
+        return {"response":"success", "update": n}
     except Exception as e:
         raise e
+    finally:
+        _ingest_lock.release()
     
 @router.post("/sessions/{session_id}/takeover")
 def takeover_session(session_id: str, db: Session = Depends(get_pg_conn)):
@@ -415,6 +437,108 @@ def open_session(db: Session = Depends(get_pg_conn), page: int = 1, limit: int =
         "items": [dict(r) for r in res],
     }
 
+@router.get("/chat_log")
+def chat_log(db: Session = Depends(get_pg_conn), page: int = 1, limit: int = 20):
+    offset = (page - 1) * limit
+    res = db.execute(
+        text("""
+            SELECT *
+            FROM chat_messages
+            ORDER BY created_at DESC
+            LIMIT :limit OFFSET :offset
+        """),
+        {
+            "limit": limit,
+            "offset": offset,
+        },
+    ).mappings().all()
+
+    total = db.execute(
+        text("SELECT COUNT(*) FROM chat_messages")
+    ).scalar()
+
+    if not res:
+        return "Not Found"
+    return {
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "items": [dict(r) for r in res],
+    }
+
+@router.get("/get_order_complete")
+def get_order_complete(db: Session = Depends(get_pg_conn)):
+    row = db.execute(ORDER_COMPLETION_SQL).mappings().first()
+    return {
+        "intent_sessions": int(row["intent_sessions"] or 0),
+        "ai_create_order": int(row["ai_create_order"] or 0),
+        "complete_rate": float(row["complete_rate"] or 0.0),
+    }
+
+@router.get("/get_handoff")
+def get_handoff(db: Session = Depends(get_pg_conn)):
+    row = db.execute(TICKET_CREATE_SQL).mappings().first()
+    return {
+        "total_sessions": int(row["total_sessions"] or 0),
+        "handoff_sessions": int(row["handoff_sessions"] or 0),
+        "handoff_rate": float(row["handoff_rate"] or 0.0),
+    }
+
+@router.get("/avg_ai_con")
+def avg_ai_con(db: Session = Depends(get_pg_conn)):
+    row = db.execute(AVG_AI_CON_SQL).mappings().first()
+    return{
+        "ai_message_count": int(row["ai_message_count"] or 0),
+        "avg_ai_confident": float(row["avg_ai_confident"] * 100 or 0.0)
+    }
+
+@router.get("/avg_session_time")
+def avg_session_time(db: Session = Depends(get_pg_conn)):
+    row = db.execute(AVG_SESSION_TIME).mappings().first()
+    return{
+        "session_used": int(row["session_used"] or 0),
+        "avg_message_count": int(row["avg_message_count"] or 0),
+        "avg_session_duration_sec": int(row["avg_session_duration_sec"] or 0),
+        "avg_session_duration_min": int(row["avg_session_duration_min"] or 0),
+    }
+
+@router.get("/get_key_top")
+def get_key_top(db: Session = Depends(get_pg_conn)):
+    row = db.execute(KEYWORD_TOPIC).mappings().first()
+    return{
+        "a_topic": row["topic"],
+        "a_key": row["keywords"]
+    }
+
+@router.post("/run_llm_insight")
+def run_llm_insight(
+    db: Session = Depends(get_pg_conn),
+    limit: int = Query(50, ge=1, le=500),
+    model_name: str = Query("gpt-4o-mini"),
+):
+    rows = db.execute(UNPROCESSED_MESSAGES, {"limit": limit}).mappings().all()
+
+    messages = [(r.get("human_message") or "").strip() for r in rows]
+    messages = [m for m in messages if m]
+    if not messages:
+        return {"ok": True,"raw": None}
+
+    combined = "\n\n---\n\n".join(messages)
+    raw = extract_insight_with_llm(combined)
+    insight = normalize_insight(raw)
+
+    db.execute(
+        INSERT_MESSAGE_INSIGHT,
+        {
+            "topic": json.dumps(insight["topic"], ensure_ascii=False),
+            "keywords": json.dumps(insight["keywords"], ensure_ascii=False),
+            "model_name": model_name,
+        },
+    )
+
+    db.commit()
+    return {"ok": True,"raw": raw}
+
 app.include_router(router)
 
 @app.post("/chat")
@@ -447,7 +571,7 @@ async def chat(
         elif chat.role == 'system':
             messages.append(SystemMessage(content=chat.content))
 
-    print("api message recived")
+    # print("api message recived")
     #================================ CHECK CALL_CENTER OR AI PATH =====================#
     session_row: ChatSession | None = (
         db.query(ChatSession)
@@ -491,14 +615,14 @@ async def chat(
         }
 
     #================================ INTENT & TOOLS =====================#
-    print("intent starting")
-    print("intent loading")
+    # print("intent starting")
+    # print("intent loading")
     intent_data = load_intents(db)
-    print("intent loading sucessful")
+    # print("intent loading sucessful")
     state = get_session_state(db, session_id)
-    print("finding intent")
+    # print("finding intent")
     intent_name, tool_name, score, source = resolve_intent_with_context(humanmes, intent_data, state)
-    print("finding intent sucessful")
+    # print("finding intent sucessful")
 
     tool_registry = {
         "track_order_tool": track_order_tool,
@@ -522,14 +646,9 @@ async def chat(
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 
-    # print("session received =", external_session_id)
+    print("session received =", external_session_id)
     # print(f"intent: {intent_name}")
     # print(f"intent score: {score}")
-
-    llm, system_prompt = get_current_llm_setting(db)
-    # tool_names = ", ".join(_tool_name(t) for t in chosen_tools) if chosen_tools else "None"
-
-    intent_prompt_template = ( f"""ระบบจับ Intent อัตโนมัติ: [INTENT MATCHER] {intent_name or 'None'}""").strip()
     #=====================================================================#
 
     #=============================== SENTIMENT ===========================#
@@ -541,14 +660,16 @@ async def chat(
     else:
         sentiment_content = "ลูกค้าอารมณ์ปกติ ตอบกลับได้ตามปกติ"
 
+    intent_prompt_template = ( f"""ระบบจับ Intent อัตโนมัติ: [INTENT MATCHER] {intent_name or 'None'}""").strip()
     messages.insert(1, SystemMessage(content=f"ระบบจับอารมณ์อัตโนมัติ: [SENTIMENT] {sentiment_content}"))
     messages.insert(2, SystemMessage(content=intent_prompt_template))
     messages.insert(3, SystemMessage(content=f"SESSION_ID FOR THIS CONVERSATION = {session_id}"))
     #=====================================================================#
 
     #============================= LLM AGENT =============================#
-    print("agent recived message")
+    llm, system_prompt = get_current_llm_setting(db)
     agent = react_agent(llm, chosen_tools, system_prompt)
+    # print("agent recived message")
     result = await agent.ainvoke({"messages": messages, "used_tools": []})
     used_tools = result.get("used_tools", [])
 
@@ -574,7 +695,7 @@ async def chat(
     if (close_now or "").lower() == "true":
         close_session_now(db, session_id)
 
-    print("agent response message")
+    # print("agent response message")
     
     chat_message_log(
         db,

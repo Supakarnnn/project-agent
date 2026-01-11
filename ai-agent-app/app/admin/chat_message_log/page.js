@@ -14,8 +14,10 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
-  const limit = 10;
+  const limit = 20;
   const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  const f2f = (v) => Number.isFinite(Number(v)) ? Number(v).toFixed(2) : "-";
 
   useEffect(() => {
     const fetchTickets = async () => {
@@ -24,7 +26,7 @@ export default function Home() {
         setErrorMsg("");
 
         const res = await fetch(
-          `${API}/admin/open-session?page=${page}&limit=${limit}`,
+          `${API}/admin/chat_log?page=${page}&limit=${limit}`,
           { cache: "no-store" }
         );
 
@@ -44,7 +46,7 @@ export default function Home() {
 
     if (!API) {
       setLoading(false);
-      setErrorMsg("ยังไม่ได้ตั้งค่า NEXT_PUBLIC_API_URL");
+      setErrorMsg("error");
       return;
     }
 
@@ -57,7 +59,7 @@ export default function Home() {
 
       <main className={styles.main}>
         <div className={styles.header}>
-          <h1 className={styles.title}>Session opened in server</h1>
+          <h1 className={styles.title}>Chat Log in server</h1>
           <LogoutButton>Logout</LogoutButton>
         </div>
 
@@ -72,29 +74,31 @@ export default function Home() {
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>started_at</th>
-                  <th>last_activity_at</th>
-                  <th>closed_at</th>
-                  <th>status</th>
-                  <th>message_count</th>
-                  <th>total_duration_sec</th>
-                  <th>dialog_status</th>
-                  <th>mode</th>
+                  <th>Message_id</th>
+                  <th>Session_id</th>
+                  <th>Human message</th>
+                  <th>Ai message</th>
+                  <th>Sentiment</th>
+                  <th>Intent name</th>
+                  <th>Intent score</th>
+                  <th>Ai confident</th>
+                  <th>created_at</th>
+                  <th>Used tools</th>
                 </tr>
               </thead>
               <tbody>
                 {tickets.map((t) => (
-                  <tr key={t.id}>
-                    <td>{t.id}</td>
-                    <td>{t.started_at? new Date(t.started_at).toLocaleString("th-TH"):"-"}</td>
-                    <td>{t.last_activity_at ? new Date(t.last_activity_at).toLocaleString("th-TH"):"-"}</td>
-                    <td>{t.closed_at ? new Date(t.closed_at).toLocaleString("th-TH"):"-"}</td>
-                    <td>{t.status}</td>
-                    <td>{t.message_count}</td>
-                    <td>{t.total_duration_sec}</td>
-                    <td>{t.dialog_status}</td>
-                    <td>{t.mode}</td>
+                  <tr key={t.message_id}>
+                    <td>{t.message_id}</td>
+                    <td>{t.session_id}</td>
+                    <td className={styles.nowrapCell}>{t.human_message}</td>
+                    <td className={styles.nowrapCell}>{t.ai_message}</td>
+                    <td>{t.sentiment}</td>
+                    <td>{t.intent_name}</td>
+                    <td>{f2f(t.intent_score)}</td>
+                    <td>{f2f(t.ai_confident)}</td>
+                    <td>{t.created_at ? new Date(t.created_at).toLocaleString("th-TH"):"-"}</td>
+                    <td>{t.used_tools}</td>
                   </tr>
                 ))}
               </tbody>
