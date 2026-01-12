@@ -149,7 +149,7 @@ def chat_message_log(
     used_tools: list | None,
     ai_confident: float | None,
 ):
-    db.execute(
+    row = db.execute(
         text("""
             INSERT INTO public.chat_messages
             (session_id, human_message, ai_message, sentiment,
@@ -157,6 +157,7 @@ def chat_message_log(
             VALUES
             (:session_id, :human_message, :ai_message, :sentiment,
             :intent_name, :intent_score, :ai_confident, CAST(:used_tools AS jsonb))
+            RETURNING message_id;
         """),
         {
             "session_id": session_id,
@@ -169,4 +170,6 @@ def chat_message_log(
             "used_tools": json.dumps(used_tools or []),
         }
     )
+    message_id = row.scalar()
     db.commit()
+    return int(message_id)

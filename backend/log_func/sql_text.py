@@ -93,3 +93,13 @@ FROM chat_sessions
 WHERE message_count > 0
   AND total_duration_sec IS NOT NULL;
 """)
+
+UPSERT_FEEDBACK = text("""
+    INSERT INTO message_feedback (message_id, rating, session_id)
+    VALUES (:message_id, :rating, :session_id)
+    ON CONFLICT (message_id)
+    DO UPDATE SET
+        rating = EXCLUDED.rating,
+        session_id = COALESCE(EXCLUDED.session_id, message_feedback.session_id)
+    RETURNING feedback_id, message_id, rating, session_id, created_at;
+""")

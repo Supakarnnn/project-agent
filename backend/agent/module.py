@@ -86,3 +86,8 @@ class CreateTicketInput(BaseModel):
     category_fullname: str = Field(..., description="หมวดหมู่เคส 1.'สอบถาม > โปรโมชัน' 2.'รับแจ้ง' 3.'ร้องเรียน' 4.'เปิดใบสั่งซื้อ'")
     customer: ticketCustomer = Field(..., description="ข้อมูลลูกค้า")
     detail: str = Field(..., description="รายละเอียดที่ลูกค้าอยากสอบถาม")
+
+class feedbackget(BaseModel):
+    message_id: int = Field(..., ge=1)
+    rating: int = Field(..., ge=1, le=5)
+    session_id: str | None = None

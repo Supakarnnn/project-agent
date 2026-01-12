@@ -6,7 +6,7 @@ from fastapi import FastAPI, Response, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
-from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate
+from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate, feedbackget
 from agent.model import get_current_llm_setting, ChatSession
 from connect_milvus import connect_milvus
 from pymilvus import utility, Collection, connections
@@ -14,7 +14,7 @@ from agent.tool_call import (create_ticket, get_registered_tools, track_order_to
 from intents.intent_matcher import load_intents, resolve_intent_with_context
 from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now, chat_message_log
-from log_func.sql_text import ORDER_COMPLETION_SQL, TICKET_CREATE_SQL,AVG_AI_CON_SQL, UNPROCESSED_MESSAGES, INSERT_MESSAGE_INSIGHT, KEYWORD_TOPIC, AVG_SESSION_TIME
+from log_func.sql_text import ORDER_COMPLETION_SQL, TICKET_CREATE_SQL,AVG_AI_CON_SQL, UNPROCESSED_MESSAGES, INSERT_MESSAGE_INSIGHT, KEYWORD_TOPIC, AVG_SESSION_TIME, UPSERT_FEEDBACK
 from log_func.message_insight import extract_insight_with_llm, normalize_insight
 from sentiment_model.s_model import detect_sentiment
 from auth_admin.auth import verify_password, hash_password
@@ -539,6 +539,25 @@ def run_llm_insight(
     db.commit()
     return {"ok": True,"raw": raw}
 
+@router.post("/give_feedback")
+def give_feedback(data: feedbackget, db: Session = Depends(get_pg_conn)):
+    print(data)
+    try:
+        row = db.execute(
+            UPSERT_FEEDBACK,
+            {
+                "message_id": data.message_id,
+                "rating": data.rating,
+                "session_id": data.session_id,
+            }
+        ).mappings().first()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise e
+    
+    return {"ok": True, "feedback": dict(row)}
+
 app.include_router(router)
 
 @app.post("/chat")
@@ -697,7 +716,7 @@ async def chat(
 
     # print("agent response message")
     
-    chat_message_log(
+    ai_message_id = chat_message_log(
         db,
         session_id=log_session_id,
         human_message=last_human_message,
@@ -713,6 +732,7 @@ async def chat(
         "session_id": str(session_id),
         "human_message": last_human_message,
         "sentiment_model_message": sentiment_content,
+        "ai_message_id": ai_message_id,
         "response": final_result,
         "sentiment": sentiment,
         "intent": intent_name,

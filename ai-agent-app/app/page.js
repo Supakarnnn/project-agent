@@ -6,7 +6,7 @@ import styles from "./page.module.css";
 import Feedback from "./feedback";
 
 export default function Home() {
-  //fix ai message
+  //fixed ai message
   const INITIAL_MESSAGE = {
     role: "ai",
     content: "สวัสดี เราคือ HealthCare++ 🩺 พร้อมช่วยแนะนำสินค้าสุขภาพให้คุณค่ะ",
@@ -90,7 +90,7 @@ export default function Home() {
     return "";
   };
 
-  // open / close WebSocket ตาม sessionId
+  // open / close WebSocket ตาม session id
   useEffect(() => {
     if (!sessionId) return;
 
@@ -200,8 +200,8 @@ export default function Home() {
         saveSessionId(data.session_id);
       }
 
-      // if mode = human
       if (data && data.mode === "human") {
+        setLoading(false);
         return;
       }
 
@@ -210,7 +210,13 @@ export default function Home() {
           ? data.response
           : "ขอโทษค่ะ ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้งค่ะ";
 
-      setMessages((prev) => [...prev, { role: "ai", content: aiText }]);
+      const aiMessage = {
+        role: "ai",
+        content: aiText,
+        message_id: data?.ai_message_id ?? null,
+      };
+
+      setMessages((prev) => [...prev, aiMessage]);
     } catch (e) {
       console.error(e);
       setMessages((prev) => [
@@ -218,12 +224,14 @@ export default function Home() {
         {
           role: "ai",
           content: "ขอโทษค่ะ ระบบมีปัญหาชั่วคราว กรุณาลองใหม่อีกครั้งค่ะ",
+          message_id: null,
         },
       ]);
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className={styles.page}>
@@ -314,14 +322,14 @@ export default function Home() {
                     <ReactMarkdown>{m.content}</ReactMarkdown>
                     {/* {m.content} */}
 
-                    {isAI && i !== 0 && (
+                    {isAI && i !== 0 && m.message_id && (
                       <Feedback
-                        messageId={i}
-                        onRate={(data) => {
-                          console.log("rated:", data);
-                        }}
+                        messageId={m.message_id}
+                        sessionId={sessionId}
                       />
                     )}
+
+
                   </div>
 
                   {isHuman && (
