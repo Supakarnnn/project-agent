@@ -3,6 +3,7 @@ from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 from sentence_transformers import SentenceTransformer
+from sqlalchemy.ext.asyncio import AsyncSession
 from agent.model import embedding_model
 
 GLOBAL_MIN_CONFIDENCE = 0.60
@@ -14,31 +15,44 @@ RECENCY_ALPHA = 0.70
 
 intent_model = embedding_model
 
-def load_intents(db) -> List[Dict]:
-    intents = db.execute(text("""
+async def load_intents(db: AsyncSession) -> List[Dict]:
+    # 1) โหลด intents ก่อน
+    intent_result = await db.execute(text("""
         SELECT intent_id, name, tool_name
         FROM intents
         ORDER BY intent_id
-    """)).mappings().all()
+    """))
+    intents = intent_result.mappings().all()
 
-    out = []
+    out: List[Dict] = []
     for it in intents:
-        phrases = db.execute(text("""
+        # 2) โหลด phrases ของ intent นั้น ๆ
+        phrase_result = await db.execute(text("""
             SELECT phrase
             FROM training_phrases
             WHERE intent_id = :iid
-        """), {"iid": it["intent_id"]}).scalars().all()
+        """), {"iid": it["intent_id"]})
+        phrases = phrase_result.scalars().all()
+
         if not phrases:
             continue
 
+        # 3) ทำ embedding (เหมือนเดิม)
         list_of_vectors = intent_model.embed_documents(phrases)
-        vecs = np.array(list_of_vectors)
+        vecs = np.array(list_of_vectors, dtype=np.float32)
         intent_vec = np.mean(vecs, axis=0)
+
+        # (แนะนำ) normalize เพื่อให้ dot = cosine แบบนิ่งขึ้น
+        norm = np.linalg.norm(intent_vec)
+        if norm > 0:
+            intent_vec = intent_vec / norm
+
         out.append({
             "intent": it["name"],
             "tool": it["tool_name"],
-            "embedding": intent_vec
+            "embedding": intent_vec,
         })
+
     return out
 
 def match_intent_single(

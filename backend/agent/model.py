@@ -12,12 +12,24 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
 from datetime import datetime
 from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 dotenv.load_dotenv()
 
-def get_current_llm_setting(db: Session):
-    config = db.execute(text("SELECT * FROM llm_configs ORDER BY id DESC LIMIT 1")).mappings().first()
+async def get_current_llm_setting(db: AsyncSession):
+    result = await db.execute(text("""
+        SELECT *
+        FROM llm_configs
+        ORDER BY id DESC
+        LIMIT 1
+    """))
+    config = result.mappings().first()
+
+    if not config:
+        # กันเคสตารางว่าง
+        raise RuntimeError("No llm_configs found in database")
+
     llm = ChatOpenAI(
         api_key=os.environ.get("OPENAI_KEY"),
         model=config["model"],

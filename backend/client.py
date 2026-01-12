@@ -22,8 +22,9 @@ from agent.confident_cal import cal_confidence
 from ingest_data_v2 import ingest_promotion_product, ingest_all_product, ingest_detail_product
 from contextlib import asynccontextmanager, suppress
 from sqlalchemy.orm import Session
-from sqlalchemy import text
-from database import get_pg_conn, get_db_session, get_maria_session, get_maria_conn
+from sqlalchemy import text, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from database import get_pg_conn, get_db_session, get_maria_session, get_maria_conn, async_get_pg_conn, AsyncSessionLocal
 from admin_function.live_chat import manager
 import threading
 
@@ -35,16 +36,17 @@ dotenv.load_dotenv()
 
 AUTO_CLOSE_EVERY_SEC = 60
 _ingest_lock = threading.Lock()
+
 async def _auto_close_loop(app):
     while True:
         try:
-            db = get_db_session()
-            try:
-                autoclose_inactive_sessions(db)
-            finally:
-                db.close()
+            async with AsyncSessionLocal() as db:
+                await autoclose_inactive_sessions(db)
+        except asyncio.CancelledError:
+            break
         except Exception:
             logger.exception("autoclose loop error")
+
         await asyncio.sleep(AUTO_CLOSE_EVERY_SEC)
 
 @asynccontextmanager
@@ -563,15 +565,15 @@ app.include_router(router)
 @app.post("/chat")
 async def chat(
     chatmessage: RequestMessage,
-    db: Session = Depends(get_pg_conn),
+    db: AsyncSession = Depends(async_get_pg_conn),
     external_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
     close_now: Optional[str] = Header(None, alias="X-Close-Session"),
 ):
     messages = []
     humanmes = []
     aimanmes = []
-    autoclose_inactive_sessions(db)
-    session_id = get_or_create_session(db, external_session_id)
+    await autoclose_inactive_sessions(db)
+    session_id = await get_or_create_session(db, external_session_id)
     log_session_id = str(session_id)
     
     last_human_message = ""
@@ -592,11 +594,8 @@ async def chat(
 
     # print("api message recived")
     #================================ CHECK CALL_CENTER OR AI PATH =====================#
-    session_row: ChatSession | None = (
-        db.query(ChatSession)
-        .filter(ChatSession.id == session_id)
-        .first()
-    )
+    session_row_result = await db.execute(select(ChatSession).where(ChatSession.id == session_id))
+    session_row = session_row_result.scalars().first()
     ws_room_id = external_session_id or str(session_id)
     session_mode = session_row.mode if session_row and session_row.mode else "ai"
 
@@ -634,14 +633,9 @@ async def chat(
         }
 
     #================================ INTENT & TOOLS =====================#
-    # print("intent starting")
-    # print("intent loading")
-    intent_data = load_intents(db)
-    # print("intent loading sucessful")
-    state = get_session_state(db, session_id)
-    # print("finding intent")
+    intent_data = await load_intents(db)
+    state = await get_session_state(db, session_id)
     intent_name, tool_name, score, source = resolve_intent_with_context(humanmes, intent_data, state)
-    # print("finding intent sucessful")
 
     tool_registry = {
         "track_order_tool": track_order_tool,
@@ -665,9 +659,7 @@ async def chat(
     if tool_name and tool_name in tool_registry:
         chosen_tools.append(tool_registry[tool_name])
 
-    print("session received =", external_session_id)
-    # print(f"intent: {intent_name}")
-    # print(f"intent score: {score}")
+    # print("session received =", external_session_id)
     #=====================================================================#
 
     #=============================== SENTIMENT ===========================#
@@ -686,9 +678,8 @@ async def chat(
     #=====================================================================#
 
     #============================= LLM AGENT =============================#
-    llm, system_prompt = get_current_llm_setting(db)
+    llm, system_prompt = await get_current_llm_setting(db)
     agent = react_agent(llm, chosen_tools, system_prompt)
-    # print("agent recived message")
     result = await agent.ainvoke({"messages": messages, "used_tools": []})
     used_tools = result.get("used_tools", [])
 
@@ -708,15 +699,13 @@ async def chat(
         "active_intent": intent_name,
         "status": "in_progress" if intent_name else "idle"
     })
-    save_session_state(db, session_id, state)
+    await save_session_state(db, session_id, state)
 
-    update_session_activity(db, session_id, add_msg_count=2)
+    await update_session_activity(db, session_id, add_msg_count=2)
     if (close_now or "").lower() == "true":
-        close_session_now(db, session_id)
-
-    # print("agent response message")
+        await close_session_now(db, session_id)
     
-    ai_message_id = chat_message_log(
+    ai_message_id = await chat_message_log(
         db,
         session_id=log_session_id,
         human_message=last_human_message,
