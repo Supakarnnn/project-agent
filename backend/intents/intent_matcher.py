@@ -16,40 +16,66 @@ RECENCY_ALPHA = 0.70
 intent_model = embedding_model
 
 async def load_intents(db: AsyncSession) -> List[Dict]:
-    # 1) โหลด intents ก่อน
-    intent_result = await db.execute(text("""
-        SELECT intent_id, name, tool_name
-        FROM intents
-        ORDER BY intent_id
-    """))
-    intents = intent_result.mappings().all()
 
-    out: List[Dict] = []
-    for it in intents:
-        # 2) โหลด phrases ของ intent นั้น ๆ
-        phrase_result = await db.execute(text("""
-            SELECT phrase
-            FROM training_phrases
-            WHERE intent_id = :iid
-        """), {"iid": it["intent_id"]})
-        phrases = phrase_result.scalars().all()
+    query = text("""
+        SELECT i.intent_id, i.name, i.tool_name, tp.phrase
+        FROM intents i
+        JOIN training_phrases tp ON i.intent_id = tp.intent_id
+        ORDER BY i.intent_id
+    """)
+    result = await db.execute(query)
+    rows = result.mappings().all()
 
+    temp_data = {}
+    for r in rows:
+        iid = r["intent_id"]
+        if iid not in temp_data:
+            temp_data[iid] = {
+                "name": r["name"],
+                "tool": r["tool_name"],
+                "phrases": []
+            }
+        if r["phrase"] and r["phrase"].strip():
+            temp_data[iid]["phrases"].append(r["phrase"])
+
+    if not temp_data:
+        return []
+
+    all_phrases = []
+    intent_map = []
+
+    sorted_keys = sorted(temp_data.keys())
+    
+    for key in sorted_keys:
+        phrases = temp_data[key]["phrases"]
         if not phrases:
             continue
+        all_phrases.extend(phrases)
+        intent_map.append((key, len(phrases)))
 
-        # 3) ทำ embedding (เหมือนเดิม)
-        list_of_vectors = intent_model.embed_documents(phrases)
-        vecs = np.array(list_of_vectors, dtype=np.float32)
-        intent_vec = np.mean(vecs, axis=0)
+    if not all_phrases:
+        return []
 
-        # (แนะนำ) normalize เพื่อให้ dot = cosine แบบนิ่งขึ้น
+    list_of_vectors = intent_model.embed_documents(all_phrases)
+    all_vecs = np.array(list_of_vectors, dtype=np.float32)
+
+    out: List[Dict] = []
+    cursor = 0
+    
+    for (iid, count) in intent_map:
+        vecs_chunk = all_vecs[cursor : cursor + count]
+        cursor += count
+
+        intent_vec = np.mean(vecs_chunk, axis=0)
+
         norm = np.linalg.norm(intent_vec)
         if norm > 0:
             intent_vec = intent_vec / norm
 
+        item = temp_data[iid]
         out.append({
-            "intent": it["name"],
-            "tool": it["tool_name"],
+            "intent": item["name"],
+            "tool": item["tool"],
             "embedding": intent_vec,
         })
 
@@ -59,49 +85,30 @@ def match_intent_single(
     user_inputs: List[str],
     intent_data: List[Dict]
 ) -> Tuple[Optional[str], Optional[str], float]:
-    """
-    รับเฉพาะ list[str] ของข้อความ human (ล่าสุดก่อน)
-    คืน (intent_name | None, tool_name | None, score)
-    """
-    if not intent_data:
+
+    if not intent_data or not user_inputs:
         return None, None, 0.0
 
-    texts = [t.strip() for t in (user_inputs or []) if isinstance(t, str) and t.strip()]
-    if not texts:
+    last_text = user_inputs[-1]
+    if not isinstance(last_text, str) or not last_text.strip():
         return None, None, 0.0
 
-    texts = texts[-MAX_CTX_UTTERANCES:]
+    vecs = intent_model.embed_documents([last_text])
+    query_vec = np.array(vecs[0], dtype=np.float32)
 
-    # เข้ารหัสทั้งหมด
-    list_of_vectors = intent_model.embed_documents(texts)
-    vecs = np.array(list_of_vectors)
-    vecs = np.array(list_of_vectors)
-    if len(vecs) == 1:
-        q = vecs[0]
-    else:
-        n = len(vecs)
-        weights = np.array([RECENCY_ALPHA ** (n - 1 - i) for i in range(n)], dtype=np.float32)
-        s = weights.sum()
-        if s > 0:
-            weights = weights / s
-        q = (vecs * weights[:, None]).sum(axis=0)
-        norm = np.linalg.norm(q)
-        if norm > 0:
-            q = q / norm
+    #Compare with all intents (Dot Product)
+    best_score = -1.0
+    best_item = None
 
-    # เทียบกับ intent embeddings → ใช้ dot = cosine
-    best_score, best_idx = -1.0, None
-    for idx, item in enumerate(intent_data):
-        s = float(np.dot(q, item["embedding"]))
-        if s > best_score:
-            best_score, best_idx = s, idx
+    for item in intent_data:
+        score = float(np.dot(query_vec, item["embedding"]))
+        if score > best_score:
+            best_score = score
+            best_item = item
 
-    if best_idx is None:
-        return None, None, 0.0
-
-    item = intent_data[best_idx]
-    if best_score >= GLOBAL_MIN_CONFIDENCE:
-        return item["intent"], item["tool"], best_score
+    if best_item and best_score >= GLOBAL_MIN_CONFIDENCE:
+        return best_item["intent"], best_item["tool"], best_score
+        
     return None, None, best_score
 
 def resolve_intent_with_context(
@@ -110,63 +117,27 @@ def resolve_intent_with_context(
     session_state: Dict
 ) -> Tuple[Optional[str], Optional[str], float, str]:
     """
-    รับเฉพาะ list[str] ; คืน (intent_name, tool_name, score, source)
-    source: "candidate" | "stickiness" | "override"
+    Simplified Logic:
+    1. Check Timeout
+    2. Try to match NEW message
+    3. If High Score -> Switch Intent
+    4. If Low Score -> Keep Old Intent (if exists)
     """
-    # timeout → รีเซ็ต intent เดิม
+    
     last = session_state.get("last_updated")
     if last and isinstance(last, datetime):
         if datetime.now(timezone.utc) - last > timedelta(minutes=SESSION_TIMEOUT_MIN):
-            session_state.update({"active_intent": None, "status": "idle"})
+            session_state.update({"active_intent": None})
 
-    # 1) หาผล candidate
-    cand_intent, cand_tool, cand_score = match_intent_single(user_inputs, intent_data)
     active_intent = session_state.get("active_intent")
 
-    # 2) ถ้ายังไม่มี intent เดิม → ใช้ candidate
-    if not active_intent:
-        return cand_intent, cand_tool, cand_score, "candidate"
+    cand_intent, cand_tool, cand_score = match_intent_single(user_inputs, intent_data)
 
-    # 3) หา embedding ของ intent เดิม
-    active_tool, active_emb = None, None
-    for it in intent_data:
-        if it["intent"] == active_intent:
-            active_tool, active_emb = it["tool"], it["embedding"]
-            break
+    if cand_intent:
+        return cand_intent, cand_tool, cand_score, "new_match"
 
-    # 4) คำนวณเวกเตอร์ q จาก list เดิม (ลอจิกเดียวกับด้านบน)
-    texts = [t.strip() for t in (user_inputs or []) if isinstance(t, str) and t.strip()]
-    if texts:
-        texts = texts[-MAX_CTX_UTTERANCES:]
-        list_of_vectors = intent_model.embed_documents(texts)
-        vecs = np.array(list_of_vectors)
-        if len(vecs) == 1:
-            q = vecs[0]
-        else:
-            n = len(vecs)
-            weights = np.array([RECENCY_ALPHA ** (n - 1 - i) for i in range(n)], dtype=np.float32)
-            s = weights.sum()
-            if s > 0:
-                weights = weights / s
-            q = (vecs * weights[:, None]).sum(axis=0)
-            norm = np.linalg.norm(q)
-            if norm > 0:
-                q = q / norm
-    else:
-        q = None
+    if active_intent:
+        old_tool = next((i["tool"] for i in intent_data if i["intent"] == active_intent), None)
+        return active_intent, old_tool, 0.0, "continue"
 
-    baseline = float(np.dot(q, active_emb)) if (q is not None and active_emb is not None) else 0.0
-
-    # 5) กรณีไม่พบ candidate → ยึด intent เดิมเสมอ (stickiness)
-    if cand_intent is None:
-        return active_intent, active_tool, baseline, "stickiness"
-
-    # 6) มี candidate และคะแนนพอใช้ → ชนะชัดเจนกว่าฐานเดิมค่อย override
-    if cand_score >= STICKY_MIN_CONFIDENCE:
-        if cand_score >= baseline + OVERRIDE_MARGIN:
-            return cand_intent, cand_tool, cand_score, "override"
-        else:
-            return active_intent, active_tool, max(baseline, cand_score), "stickiness"
-
-    # 7) คะแนนยังไม่ถึง → คง intent เดิม
-    return active_intent, active_tool, baseline, "stickiness"
+    return None, None, 0.0, "unknown"

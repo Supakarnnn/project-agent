@@ -592,7 +592,7 @@ async def chat(
         elif chat.role == 'system':
             messages.append(SystemMessage(content=chat.content))
 
-    # print("api message recived")
+    print("api message recived")
     #================================ CHECK CALL_CENTER OR AI PATH =====================#
     session_row_result = await db.execute(select(ChatSession).where(ChatSession.id == session_id))
     session_row = session_row_result.scalars().first()
@@ -611,7 +611,7 @@ async def chat(
                 "source": "http",
             })
 
-        sentiment = detect_sentiment(last_human_message)
+        sentiment = await asyncio.to_thread(detect_sentiment, last_human_message)
         if sentiment == "negative":
             sentiment_content = "ลูกค้าอยู่ในอารมณ์ไม่ดี กรุณาตอบกลับด้วยความสุภาพและช่วยให้เขาใจเย็นลง"
         elif sentiment == "positive":
@@ -633,9 +633,13 @@ async def chat(
         }
 
     #================================ INTENT & TOOLS =====================#
+    print("intent load start")
     intent_data = await load_intents(db)
+    print("intent load end")
     state = await get_session_state(db, session_id)
-    intent_name, tool_name, score, source = resolve_intent_with_context(humanmes, intent_data, state)
+    print("resolve_intent_with_context start")
+    intent_name, tool_name, score, source = await asyncio.to_thread(resolve_intent_with_context, humanmes, intent_data, state)
+    print("resolve_intent_with_context end")
 
     tool_registry = {
         "track_order_tool": track_order_tool,
@@ -663,7 +667,7 @@ async def chat(
     #=====================================================================#
 
     #=============================== SENTIMENT ===========================#
-    sentiment = detect_sentiment(last_human_message)
+    sentiment = await asyncio.to_thread(detect_sentiment, last_human_message)
     if sentiment == "negative":
         sentiment_content = "ลูกค้าอยู่ในอารมณ์ไม่ดี กรุณาตอบกลับด้วยความสุภาพและช่วยให้ลูกค้าใจเย็นลง"
     elif sentiment == "positive":
@@ -679,12 +683,14 @@ async def chat(
 
     #============================= LLM AGENT =============================#
     llm, system_prompt = await get_current_llm_setting(db)
+    print("react_agent start")
     agent = react_agent(llm, chosen_tools, system_prompt)
     result = await agent.ainvoke({"messages": messages, "used_tools": []})
     used_tools = result.get("used_tools", [])
 
     final_msg: AIMessage = result["messages"][-1]
     final_result: str = final_msg.content
+    print("react_agent end")
     #=====================================================================#
 
     #=========================== CONFIDENCE ==============================#
@@ -716,7 +722,6 @@ async def chat(
         used_tools=used_tools or [],
         ai_confident=float(prob)
     )
-    
     return {
         "session_id": str(session_id),
         "human_message": last_human_message,
