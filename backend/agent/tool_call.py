@@ -176,61 +176,131 @@ async def promotion_search(query: str) -> str:
         print(e)
         return "เครื่องมือมีปัญหา"
     
+# @tool
+# def track_order_tool(order_id: str, name: str) -> str:
+#     """
+#     เครื่องมือสำหรับ ติดตามรายละเอียดใบสั่งซื้อสิ้นค้าหรือคำสั่งซื้อ
+#     - order_id = code หรือ รหัสใบสั่งซื้อ (SO.XXXXXX-XXXXX)
+#     - name = ชื่อ-สกุล ลูกค้า 
+#     """
+#     print(f"LLM is try using track_order_tool with {order_id} and {name}")
+#     db = get_maria_session()
+
+#     try:
+#         row = db.execute(
+#             text("""
+#                 SELECT 
+#                     name,tel,code,shipping,pay_amount,shipping_code,
+#                     address,province,district,subdistrict,zipcode,postatus
+#                 FROM tbl_so
+#                 WHERE code = :c AND name = :n
+#                 LIMIT 1
+#             """),
+#             {"c": order_id, "n": name}
+#         ).mappings().first()
+
+#         order_data = {
+#             "name": row["name"],
+#             "tel": row["tel"],
+#             "code": row["code"],
+#             "shipping": float(row["shipping"]) if row["shipping"] else None,
+#             "pay_amount": float(row["pay_amount"]) if row["pay_amount"] else None,
+#             "total_amount (ราคาสิ้นค้า + ค่าจัดส่ง)": float(row["shipping"]) + float(row["pay_amount"]),
+#             "shipping_code": row["shipping_code"],
+#             "address": row["address"],
+#             "province": row["province"],
+#             "district": row["district"],
+#             "subdistrict": row["subdistrict"],
+#             "zipcode": str(row["zipcode"]),
+#             "status": row["postatus"],
+#         }
+
+#         final_output = {
+#             "success": True,
+#             "message": "ดึงข้อมูลสำเร็จ",
+#             "order": order_data
+#         }
+
+#         print("[track_order_tool] OUTPUT:", final_output)
+
+#         return json.dumps(final_output, ensure_ascii=False, indent=2)
+
+#     except Exception as e:
+#         print(f"เกิดข้อผิดพลาด: {str(e)}")
+#         return f"เกิดข้อผิดพลาด: {str(e)}"
+
+#     finally:
+#         db.close()
+
 @tool
 def track_order_tool(order_id: str, name: str) -> str:
     """
     เครื่องมือสำหรับ ติดตามรายละเอียดใบสั่งซื้อสิ้นค้าหรือคำสั่งซื้อ
     - order_id = code หรือ รหัสใบสั่งซื้อ (SO.XXXXXX-XXXXX)
-    - name = ชื่อ-สกุล ลูกค้า 
+    - name = ชื่อ-สกุล ลูกค้า (ถ้าลูกค้าไม่ให้ชื่อ-สกุล ห้าม เรียกเครื่องมือ)
     """
+    URL = os.getenv("TRACK_ORDER_API")
+    TOKEN = os.getenv("CREATE_ORDER_TOKEN")
+
     print(f"LLM is try using track_order_tool with {order_id} and {name}")
-    db = get_maria_session()
 
+    headers = {
+            "Authorization": f"Bearer {TOKEN}",
+            "Content-Type": "application/json",
+        }
+    payload = {"code": order_id, "name": name}
     try:
-        row = db.execute(
-            text("""
-                SELECT 
-                    name,tel,code,shipping,pay_amount,shipping_code,
-                    address,province,district,subdistrict,zipcode,postatus
-                FROM tbl_so
-                WHERE code = :c AND name = :n
-                LIMIT 1
-            """),
-            {"c": order_id, "n": name}
-        ).mappings().first()
-
-        order_data = {
-            "name": row["name"],
-            "tel": row["tel"],
-            "code": row["code"],
-            "shipping": float(row["shipping"]) if row["shipping"] else None,
-            "pay_amount": float(row["pay_amount"]) if row["pay_amount"] else None,
-            "total_amount (ราคาสิ้นค้า + ค่าจัดส่ง)": float(row["shipping"]) + float(row["pay_amount"]),
-            "shipping_code": row["shipping_code"],
-            "address": row["address"],
-            "province": row["province"],
-            "district": row["district"],
-            "subdistrict": row["subdistrict"],
-            "zipcode": str(row["zipcode"]),
-            "status": row["postatus"],
-        }
-
-        final_output = {
-            "success": True,
-            "message": "ดึงข้อมูลสำเร็จ",
-            "order": order_data
-        }
-
-        print("[track_order_tool] OUTPUT:", final_output)
-
-        return json.dumps(final_output, ensure_ascii=False, indent=2)
+        resp = requests.post(URL, headers=headers, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
 
     except Exception as e:
-        print(f"เกิดข้อผิดพลาด: {str(e)}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"[track_order_tool] เรียก API ไม่สำเร็จ: {e}"
+    
+    if not data or data.get("success") is not True:
+        return f"[track_order_tool] ไม่พบข้อมูลคำสั่งซื้อ (code={order_id}, name={name})"
+    
+    v = data.get("value") or {}
+    customer = v.get("customer") or {}
 
-    finally:
-        db.close()
+    so_name = v.get("name") or customer.get("name") or "-"
+    tel = (v.get("tel") or customer.get("tel") or "").strip() or "-"
+    code = v.get("code") or "-"
+    pay_amount = v.get("pay_amount") or "-"
+    shipping = v.get("shipping") or "-"
+    pay_by = v.get("pay_by") or "-"
+    is_payment = v.get("is_payment") or v.get("postatus") or "-"
+
+    shipping_code = v.get("shipping_code") or "-"
+    address = v.get("address") or "-"
+
+    items = v.get("sodetail") or []
+    if items:
+        item_lines = []
+        for i, it in enumerate(items, start=1):
+            pname = it.get("ProductName") or "-"
+            qty = it.get("QTY") or "-"
+            item_lines.append(f"{i}) {pname} x{qty}")
+        items_text = "\n".join(item_lines)
+    else:
+        items_text = "- ไม่มีรายการสินค้า -"
+
+    summary = (
+        "สรุปคำสั่งซื้อจากระบบ CRM\n"
+        f"- ชื่อลูกค้า: {so_name}\n"
+        f"- เบอร์โทร: {tel}\n"
+        f"- รหัสคำสั่งซื้อ (SO): {code}\n"
+        f"- ยอดชำระ: {pay_amount} บาท\n"
+        f"- ค่าส่ง: {shipping} บาท\n"
+        f"- วิธีชำระเงิน: {pay_by}\n"
+        f"- สถานะชำระเงิน: {is_payment}\n"
+        f"- เลขพัสดุ: {shipping_code}\n"
+        f"- ที่อยู่จัดส่ง: {address}\n"
+        "รายการสินค้า:\n"
+        f"{items_text}"
+    )
+
+    return summary
   
 @tool
 def cancel_order():
