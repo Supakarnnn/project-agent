@@ -100,7 +100,7 @@ export default function ConfigAI() {
           </label>
 
           <label>
-            <div>Temperature (0-2) (ค่าน้อย = ตอบตรง, ค่าสูง = ตอบสร้างสรรค์)</div>
+            <div>Temperature (0-2)(ค่าน้อย: ตอบตรงประเด็นจากเครื่องมือ, ค่าสูง: ตอบสร้างสรรค์จากเครื่องมือ)</div>
             <input
               type="number"
               step="0.01"
@@ -114,7 +114,7 @@ export default function ConfigAI() {
           </label>
 
           <label>
-            <div>Top P (0-1) (ค่าน้อย = ตอบจำกัด, ค่าสูง = ตอบกว้าง)</div>
+            <div>Top P (0-1)(ค่าน้อย: คำตอบแคบ/เน้นชัวร์, ค่าสูง: ตอบสร้างสรรค์เป็นธรรมชาติ)</div>
             <input
               type="number"
               step="0.01"

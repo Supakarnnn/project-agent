@@ -61,33 +61,36 @@
 #     print(resp)
 import asyncio, json, uuid
 import httpx
+import base64
 
-URL = "http://127.0.0.1:8001/chat"
+# URL = "http://127.0.0.1:8001/chat"
 
-payload = {
-    "messages": [
-        {"role": "human", "content": "สวัสดี"},
-    ]
-}
+# payload = {
+#     "messages": [
+#         {"role": "human", "content": "สวัสดี"},
+#     ]
+# }
 
-async def one(i: int):
-    headers = {
-        "Content-Type": "application/json",
-        "X-Session-Id": str(uuid.uuid4()),
-    }
-    async with httpx.AsyncClient(timeout=120) as client:
-        r = await client.post(URL, json=payload, headers=headers)
-        return i, r.status_code, r.elapsed.total_seconds()
+# async def one(i: int):
+#     headers = {
+#         "Content-Type": "application/json",
+#         "X-Session-Id": str(uuid.uuid4()),
+#     }
+#     async with httpx.AsyncClient(timeout=120) as client:
+#         r = await client.post(URL, json=payload, headers=headers)
+#         return i, r.status_code, r.elapsed.total_seconds()
 
-async def main():
-    concurrency = 20
-    tasks = [one(i) for i in range(concurrency)]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for x in results:
-        print(x)
+# async def main():
+#     concurrency = 20
+#     tasks = [one(i) for i in range(concurrency)]
+#     results = await asyncio.gather(*tasks, return_exceptions=True)
+#     for x in results:
+#         print(x)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     asyncio.run(main())
+
+
 
 
 

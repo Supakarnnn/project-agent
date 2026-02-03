@@ -27,7 +27,6 @@ async def get_current_llm_setting(db: AsyncSession):
     config = result.mappings().first()
 
     if not config:
-        # กันเคสตารางว่าง
         raise RuntimeError("No llm_configs found in database")
 
     llm = ChatOpenAI(

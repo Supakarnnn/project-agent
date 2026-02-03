@@ -19,10 +19,27 @@
   justify-content: space-between;
   background-color: rgb(13, 16, 23);
 }
-.logo { font-weight: 800; letter-spacing: .2px; color: #ffffff;}
-.navLinks { display: flex; gap: 20px; color: #ffffff;}
-.navLinks a { color: #ffffff; text-decoration: none; }
-.navLinks a:hover { color: var(--brand); }
+
+.logo {
+  font-weight: 800;
+  letter-spacing: .2px;
+  color: #ffffff;
+}
+
+.navLinks {
+  display: flex;
+  gap: 20px;
+  color: #ffffff;
+}
+
+.navLinks a {
+  color: #ffffff;
+  text-decoration: none;
+}
+
+.navLinks a:hover {
+  color: var(--brand);
+}
 
 .footer {
   border-top: 1px solid #e2e8f0;
@@ -33,9 +50,20 @@
   justify-content: space-between;
   color: var(--muted);
 }
-.footerLinks { display: flex; gap: 14px; }
-.footer a { color: var(--muted); text-decoration: none; }
-.footer a:hover { color: var(--text); }
+
+.footerLinks {
+  display: flex;
+  gap: 14px;
+}
+
+.footer a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: var(--text);
+}
 
 
 .main {
@@ -45,22 +73,28 @@
 }
 
 .card {
-  background: whitesmoke;
-  border-radius: 16px;
-  padding: 24px 20px;
-  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  border-radius: var(--radius);
+  padding: 2.5rem;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .title {
-  font-size: 1.4rem;
-  font-weight: 700;
-  margin-bottom: 4px;
+  font-size: 1.875rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.025em;
+  text-align: center;
 }
 
 .subtitle {
-  font-size: 0.95rem;
-  color: var(--muted);
-  margin-bottom: 20px;
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin-bottom: 2.5rem;
+  text-align: center;
+  line-height: 1.6;
 }
 
 .formRow {
@@ -126,13 +160,18 @@
 .imageCenter {
   display: flex;
   justify-content: center;
-  margin-top: 10px;
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 1rem;
+  border: 1px solid var(--border);
 }
 
 .paymentImage {
-  max-width: 250px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  width: 100%;
+  max-width: 240px;
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .confirmButton {
@@ -160,9 +199,12 @@
 }
 
 .main {
-  max-width: 720px;
-  margin: 40px auto;
-  padding: 0 20px;
+  flex: 1;
+  max-width: 680px;
+  width: 100%;
+  margin: 3rem auto;
+  padding: 0 1.5rem;
+  animation: fadeIn 0.6s ease-out;
 }
 
 .card {
@@ -246,41 +288,108 @@
 }
 
 .resultCard {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px dashed #cbd5f5;
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+  animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .resultTitle {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 10px;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.resultTitle::before {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 1.25em;
+  background: var(--primary);
+  border-radius: 2px;
 }
 
 .resultGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 16px;
-  font-size: 0.9rem;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
 }
 
-.resultRow,
-.resultRowFull {
+.resultRow {
   display: flex;
-  justify-content: center;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.25rem;
 }
 
 .resultRowFull {
   grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .resultLabel {
-  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: #64748b;
 }
 
 .resultValue {
+  font-size: 1rem;
   font-weight: 500;
-  color: var(--text);
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.productList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  margin-top: 0.5rem;
+}
+
+.productItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px dashed #cbd5e1;
+}
+
+.productItem:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.productName {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.productMeta {
+  font-size: 0.875rem;
+  color: #64748b;
 }
