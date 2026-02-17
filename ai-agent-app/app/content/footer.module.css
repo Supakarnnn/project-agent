@@ -1,0 +1,165 @@
+.footer {
+    width: 100%;
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    padding: 2rem 1.5rem 0.5rem;
+    border-top: 1px solid hsl(var(--border));
+    margin-top: 12rem;
+    /* mt-48 */
+}
+
+.footerGrid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3rem;
+    /* gap-12 */
+    margin-bottom: 2rem;
+    /* mb-8 */
+}
+
+@media (min-width: 1024px) {
+    .footerGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.footerBrand {
+    display: block;
+    margin-bottom: 1rem;
+    /* mb-4 */
+    font-size: 1.25rem;
+    /* text-xl */
+    font-weight: 500;
+    /* font-medium */
+    letter-spacing: 0.025em;
+    /* tracking-wide */
+    /* ถ้าใช้ font-display จาก Tailwind เดิม ให้ไปกำหนด font-family ใน global หรือใส่ตรงนี้ */
+}
+
+.footerDesc {
+    max-width: 28rem;
+    /* max-w-md */
+    margin-bottom: 1.5rem;
+    /* mb-6 */
+    font-size: 0.875rem;
+    /* text-sm */
+    font-weight: 300;
+    /* font-light */
+    line-height: 1.6;
+    /* leading-relaxed */
+    color: hsl(var(--muted-foreground));
+}
+
+.footerContact {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    /* space-y-2 */
+    font-size: 0.875rem;
+    font-weight: 300;
+    color: hsl(var(--muted-foreground));
+}
+
+.footerContactTitle {
+    margin-bottom: 0.25rem;
+    /* mb-1 */
+    font-weight: 400;
+    /* font-normal */
+    color: hsl(var(--foreground));
+}
+
+.footerLinksGrid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    /* gap-8 */
+}
+
+@media (min-width: 768px) {
+    .footerLinksGrid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+.footerSectionTitle {
+    margin-bottom: 1rem;
+    /* mb-4 */
+    font-size: 0.875rem;
+    /* text-sm */
+    font-weight: 400;
+    /* font-normal */
+}
+
+.footerList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    /* space-y-2 */
+}
+
+.footerLink {
+    font-size: 0.875rem;
+    /* text-sm */
+    font-weight: 300;
+    /* font-light */
+    color: hsl(var(--muted-foreground));
+    text-decoration: none;
+    transition: color 150ms ease;
+}
+
+.footerLink:hover {
+    color: hsl(var(--foreground));
+}
+
+.footerBottom {
+    border-top: 1px solid hsl(var(--border));
+    margin-left: -1.5rem;
+    /* -mx-6 */
+    margin-right: -1.5rem;
+    /* -mx-6 */
+    padding-left: 1.5rem;
+    /* px-6 */
+    padding-right: 1.5rem;
+    /* px-6 */
+    padding-top: 0.5rem;
+    /* pt-2 */
+}
+
+.footerBottomInner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+    .footerBottomInner {
+        flex-direction: row;
+        gap: 0;
+    }
+}
+
+.footerCopy {
+    margin: 0;
+    margin-bottom: 0.25rem;
+    /* mb-1 */
+    font-size: 0.875rem;
+    font-weight: 300;
+    color: hsl(var(--muted-foreground));
+}
+
+@media (min-width: 768px) {
+    .footerCopy {
+        margin-bottom: 0;
+    }
+}
+
+.footerLegal {
+    display: flex;
+    gap: 1.5rem;
+    /* space-x-6 */
+}

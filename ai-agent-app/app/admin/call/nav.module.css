@@ -1,10 +1,11 @@
 .navbar {
   width: 200px;
   min-height: 100vh;
-  background: #2d3748;
+  /* background: #2d3748; */
   color: white;
   display: flex;
   flex-direction: column;
+  background: hsl(50 30% 30%);
 }
 
 .brand {
@@ -33,7 +34,7 @@
 }
 
 .menu a:hover {
-  background: #4a5568;
+  background: hsl(50 30% 50%);
 }
 
 .footer {

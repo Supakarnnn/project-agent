@@ -8,7 +8,7 @@ export default function Navbar() {
       <ul className={styles.menu}>
         <li><a href="/admin/call">Call center Dashboard</a></li>
         <li><a href="/admin/call/session">Open Chat Session</a></li>
-        <li><a href="/admin/call/session_log">Chat log (ON GOING)</a></li>
+        <li><a href="/admin/call/session_log">Chat log</a></li>
         <li><a href="/admin/call/ticket">Ticket</a></li>
       </ul>
     </nav>

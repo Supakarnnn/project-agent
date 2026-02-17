@@ -87,6 +87,31 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  transition: all 0.3s ease;
+}
+
+.modalOverlay.minimizedOverlay {
+  background: transparent;
+  pointer-events: none;
+}
+
+.modal.minimizedModal {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 350px;
+  height: auto;
+  min-height: auto;
+  max-height: 500px;
+  pointer-events: auto;
+  margin: 0;
+  transform: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.minimizedModal .chatBox,
+.minimizedModal .chatInputRow {
+  display: none;
 }
 
 /* ===== Header ===== */
@@ -95,7 +120,7 @@
   border-bottom: 1px solid #eee;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
 }
 
@@ -114,6 +139,7 @@
   display: flex;
   gap: 10px;
   align-items: center;
+  margin-left: auto;
 }
 
 .closeBtn {
@@ -215,4 +241,212 @@
 
 .sendBtn:active {
   transform: translateY(1px);
+}
+
+.minimizeBtn {
+  border: none;
+  background: #f0f0f0;
+  color: #333;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: bold;
+  margin-right: auto;
+}
+
+
+/* ===== Order Search ===== */
+.orderHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 60px;
+}
+
+.searchSection {
+  margin-top: 40px;
+  background: #fff;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.searchTitle {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: #333;
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #333;
+}
+
+.input {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5f5;
+  font-size: 0.95rem;
+  outline: none;
+  background: #ffffff;
+  max-width: 400px;
+}
+
+.input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.4);
+}
+
+.primaryButton {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: #2563eb;
+  color: #ffffff;
+  transition: transform 0.05s ease, box-shadow 0.1s ease, opacity 0.1s ease;
+}
+
+.primaryButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.25);
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.errorBox {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.9rem;
+  border: 1px solid #fecaca;
+  max-width: 400px;
+}
+
+.resultCard {
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid #eee;
+  animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.resultTitle {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.resultTitle::before {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 1.25em;
+  background: #2563eb;
+  border-radius: 2px;
+}
+
+.resultGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+}
+
+.resultRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.resultRowFull {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.resultLabel {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.resultValue {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.productList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  margin-top: 0.5rem;
+}
+
+.productItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px dashed #cbd5e1;
+}
+
+.productItem:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.productName {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.productMeta {
+  font-size: 0.875rem;
+  color: #64748b;
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Navbar from "../navbar";
+import Footer from "../content/footer";
 import styles from "./page.module.css";
 
 export default function Home() {
@@ -96,14 +98,7 @@ export default function Home() {
     return (
         <div className={styles.page}>
             {/* Top Nav */}
-            <header className={styles.nav}>
-                <div className={styles.logo}>HealthCare++</div>
-                <nav className={styles.navLinks}>
-                    <a href="/payment">Payment</a>
-                    <a href="#whyus">Why Us</a>
-                    <a href="#faq">FAQ</a>
-                </nav>
-            </header>
+            <Navbar />
 
             {/* Main content */}
             <main className={styles.main}>
@@ -151,14 +146,7 @@ export default function Home() {
             </main>
 
             {/* Footer */}
-            <footer className={styles.footer}>
-                <div>© {new Date().getFullYear()} HealthCare++ Shop</div>
-                <div className={styles.footerLinks}>
-                    <a href="#">Privacy</a>
-                    <a href="#">Terms</a>
-                    <a href="#">Contact</a>
-                </div>
-            </footer>
+            <Footer />
         </div>
     );
 }

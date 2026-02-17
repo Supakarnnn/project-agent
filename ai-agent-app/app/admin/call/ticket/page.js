@@ -4,19 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import Navbar from "../nav";
 import { LogoutButton } from "../../Component/logout";
 import styles from "./page.module.css";
+import { ArrowUpFromLine, ArrowLeftFromLine } from "lucide-react";
 
-function LiveChat({ open, onClose, sessionId, ticketId, code}) {
+function LiveChat({ open, onClose, sessionId, ticketId, code }) {
   const API = process.env.NEXT_PUBLIC_API_URL;
   const pro_API = process.env.NEXT_PUBLIC_PROAPI_URL;
 
   const [connectedSession, setConnectedSession] = useState("");
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+  const [minimized, setMinimized] = useState(false);
   const wsRef = useRef(null);
 
   const connect = (sid) => {
     if (!sid) return;
-
     if (wsRef.current) wsRef.current.close();
 
     const wsUrl = `ws://localhost:8001/ws/${sid}/agent`;
@@ -60,6 +61,11 @@ function LiveChat({ open, onClose, sessionId, ticketId, code}) {
 
   const closeCase = async () => {
     if (!ticketId) return;
+
+    if (wsRef.current && wsRef.current.readyState === 1) {
+      wsRef.current.send(JSON.stringify({ sender: "system", content: "END_SESSION" }));
+    }
+
     await fetch(
       `${API}/admin/tickets/${ticketId}/close`,
       {
@@ -109,9 +115,19 @@ function LiveChat({ open, onClose, sessionId, ticketId, code}) {
   if (!open) return null;
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <div className={`${styles.modalOverlay} ${minimized ? styles.minimizedOverlay : ""}`} onClick={onClose}>
+      <div className={`${styles.modal} ${minimized ? styles.minimizedModal : ""}`} onClick={(e) => e.stopPropagation()}>
         <div className={styles.modalHeader}>
+          <button
+            className={styles.minimizeBtn}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMinimized(!minimized);
+            }}
+            title={minimized ? "Expand" : "Minimize"}
+          >
+            {minimized ? <ArrowUpFromLine /> : <ArrowLeftFromLine />}
+          </button>
           <div>
             <div className={styles.modalTitle}>Live Chat</div>
             <div className={styles.modalSub}>
@@ -164,6 +180,195 @@ function LiveChat({ open, onClose, sessionId, ticketId, code}) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function OrderDetailSection({ orderData, formatCurrency, styles }) {
+  const isPending = orderData.postatus === "รอชำระเงิน";
+  const shipping = Number(orderData.shipping ?? 0);
+  const payAmount = Number(orderData.pay_amount ?? 0);
+
+  // Check if status implies success/paid
+  const isPaid = orderData.postatus === "ชำระเงินแล้ว" || orderData.postatus === "Completed";
+  const statusColor = isPending ? "#d97706" : isPaid ? "#059669" : "#2563eb";
+
+  return (
+    <section className={styles.resultCard}>
+      <h2 className={styles.resultTitle}>
+        {isPending ? "รายละเอียดคำสั่งซื้อ (รอชำระเงิน)" : "รายละเอียดคำสั่งซื้อ"}
+      </h2>
+
+      <div className={styles.resultGrid}>
+        <div className={styles.resultRow}>
+          <span className={styles.resultLabel}>ชื่อลูกค้า</span>
+          <span className={styles.resultValue}>{orderData.name}</span>
+        </div>
+        <div className={styles.resultRow}>
+          <span className={styles.resultLabel}>เบอร์โทร</span>
+          <span className={styles.resultValue}>{orderData.tel}</span>
+        </div>
+        <div className={styles.resultRow}>
+          <span className={styles.resultLabel}>หมายเลขคำสั่งซื้อ</span>
+          <span className={styles.resultValue}>{orderData.code}</span>
+        </div>
+        <div className={styles.resultRow}>
+          <span className={styles.resultLabel}>สถานะ</span>
+          <span
+            className={styles.resultValue}
+            style={{ color: statusColor, fontWeight: 700 }}
+          >
+            {orderData.postatus}
+          </span>
+        </div>
+
+        <div className={styles.resultRowFull}>
+          <div style={{ height: '1px', background: '#e2e8f0', margin: '0.5rem 0' }} />
+        </div>
+
+        <div className={styles.resultRow}>
+          <span className={styles.resultLabel}>ค่าส่ง</span>
+          <span className={styles.resultValue}>{formatCurrency(shipping)}</span>
+        </div>
+        <div className={styles.resultRow}>
+          <span className={styles.resultLabel}>ส่วนลด</span>
+          <span className={styles.resultValue}>{orderData.discountdetail || "-"}</span>
+        </div>
+        <div className={styles.resultRowFull}>
+          <div className={styles.resultRow} style={{ alignItems: 'flex-end', marginTop: '0.5rem' }}>
+            <span className={styles.resultLabel} style={{ fontSize: '0.85rem' }}>ยอดชำระสุทธิ</span>
+            <span className={styles.resultValue} style={{ fontSize: '1.25rem', color: '#2563eb' }}>
+              {formatCurrency(payAmount)}
+            </span>
+          </div>
+        </div>
+
+        <div className={styles.resultRowFull}>
+          <div style={{ height: '1px', background: '#e2e8f0', margin: '0.5rem 0' }} />
+        </div>
+
+        <div className={styles.resultRowFull}>
+          <span className={styles.resultLabel}>ที่อยู่จัดส่ง</span>
+          <span className={styles.resultValue} style={{ lineHeight: '1.5' }}>
+            {orderData.address} {orderData.subdistrict} {orderData.district} {orderData.province} {orderData.zipcode}
+          </span>
+        </div>
+        <div className={styles.resultRow}>
+          <span className={styles.resultLabel}>เลขพัสดุ</span>
+          <span className={styles.resultValue}>{orderData.shipping_code || "-"}</span>
+        </div>
+
+        <div className={styles.resultRowFull}>
+          <span className={styles.resultLabel} style={{ marginTop: '0.5rem' }}>รายการสินค้า</span>
+          <div className={styles.productList}>
+            {Array.isArray(orderData.sodetail) &&
+              orderData.sodetail.map((item, idx) => (
+                <div key={idx} className={styles.productItem}>
+                  <div className={styles.productName}>{item.ProductName}</div>
+                  <div className={styles.productMeta}>
+                    {item.QTY} x {formatCurrency(item.PricePerUnit)}
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OrderSearch() {
+  const [orderCode, setOrderCode] = useState("");
+  const [orderData, setOrderData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleCheckPayment = async () => {
+    if (!orderCode.trim()) return;
+
+    setLoading(true);
+    setError("");
+    setOrderData(null);
+
+    try {
+      const res = await fetch(
+        "https://crm-a02.protollcall.com/aichat/webservice.php/getso",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + process.env.NEXT_PUBLIC_CRM_TOKEN,
+          },
+          body: JSON.stringify({
+            code: orderCode.trim(),
+          }),
+        }
+      );
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const msg =
+          json?.detail || json?.message || `เกิดข้อผิดพลาด (code ${res.status})`;
+        throw new Error(msg);
+      }
+
+      if (!json?.success) {
+        const msg = json?.message || "ไม่พบข้อมูลคำสั่งซื้อ หรือระบบตอบกลับไม่ถูกต้อง";
+        throw new Error(msg);
+      }
+
+      setOrderData(json.value || null);
+    } catch (err) {
+      setError(err?.message || "เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat("th-TH", {
+      style: "currency",
+      currency: "THB",
+    }).format(amount);
+  };
+
+  return (
+    <div className={styles.searchSection}>
+      <h2 className={styles.searchTitle}>ค้นหาคำสั่งซื้อ</h2>
+      <div className={styles.formRow}>
+        <label className={styles.label} htmlFor="orderCode">
+          หมายเลขคำสั่งซื้อ
+        </label>
+        <input
+          id="orderCode"
+          type="text"
+          className={styles.input}
+          placeholder="เช่น SO20251202-001"
+          value={orderCode}
+          onChange={(e) => setOrderCode(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleCheckPayment()}
+        />
+      </div>
+
+      <button
+        className={styles.primaryButton}
+        type="button"
+        onClick={handleCheckPayment}
+        disabled={!orderCode.trim() || loading}
+      >
+        {loading ? "กำลังตรวจสอบ..." : "ตรวจสอบสถานะ"}
+      </button>
+
+      {error && <div className={styles.errorBox}>{error}</div>}
+
+      {orderData && (
+        <OrderDetailSection
+          orderData={orderData}
+          formatCurrency={formatCurrency}
+          styles={styles}
+        />
+      )}
     </div>
   );
 }
@@ -316,6 +521,12 @@ export default function Home() {
             </div>
           </>
         )}
+
+        <div className={styles.orderHeader}>
+          <h1 className={styles.title}>Order Search</h1>
+        </div>
+
+        <OrderSearch />
       </main>
 
       <LiveChat

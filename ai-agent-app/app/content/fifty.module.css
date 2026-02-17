@@ -1,0 +1,75 @@
+.section {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto 4rem;
+    /* mb-16 */
+    padding: 0 1.5rem;
+    /* px-6 */
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    /* gap-6 */
+}
+
+@media (min-width: 768px) {
+    .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.card {
+    width: 100%;
+}
+
+.link {
+    display: block;
+    text-decoration: none;
+}
+
+.imageWrap {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    margin-bottom: 0.75rem;
+    /* mb-3 */
+    overflow: hidden;
+    border-radius: 0.5rem;
+    /* rounded-lg */
+}
+
+.image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 300ms ease;
+}
+
+.image:hover {
+    transform: scale(1.05);
+}
+
+/* ปรับสีให้ไปตามธีม: ใช้ CSS variables ตามที่โปรเจกต์ตั้งไว้ */
+.title {
+    font-size: 0.875rem;
+    /* text-sm */
+    font-weight: 400;
+    /* font-normal */
+    color: var(--foreground);
+    margin: 0 0 0.25rem 0;
+    /* mb-1 */
+}
+
+.desc {
+    font-size: 0.875rem;
+    /* text-sm */
+    font-weight: 300;
+    /* font-light */
+    color: #888;
+    margin: 0;
+}
+
+.textWrap {
+    display: block;
+}

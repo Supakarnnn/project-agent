@@ -181,7 +181,7 @@ export default function Home() {
                 </div>
                 <div className={styles.kpi}>
                   <div className={styles.kpiValue}>{aiCreateOrder} ครั้ง</div>
-                  <div className={styles.kpiLabel}>AI use "create_order"</div>
+                  <div className={styles.kpiLabel}>AI use create_order</div>
                 </div>
               </div>
             </div>
@@ -215,7 +215,7 @@ export default function Home() {
                 </div>
                 <div className={styles.kpi}>
                   <div className={styles.kpiValue}>{handoff_sessions} ครั้ง</div>
-                  <div className={styles.kpiLabel}>AI use "create_ticket"</div>
+                  <div className={styles.kpiLabel}>AI use create_ticket</div>
                 </div>
               </div>
             </div>

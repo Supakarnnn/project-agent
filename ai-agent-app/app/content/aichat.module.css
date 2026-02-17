@@ -1,0 +1,342 @@
+.chatSection {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 40px 20px;
+    display: flex;
+    gap: 40px;
+    align-items: flex-start;
+    font-family: 'Inter', sans-serif;
+}
+
+/* Left Panel */
+.infoPanel {
+    flex: 1;
+    max-width: 500px;
+}
+
+.aiLabel {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #3B8C6E;
+    /* Green from design */
+    font-weight: 600;
+    font-size: 0.9rem;
+    letter-spacing: 1px;
+    margin-bottom: 20px;
+}
+
+.title {
+    font-size: 3rem;
+    font-family: serif;
+    line-height: 1.1;
+    color: #1a1a1a;
+    margin-bottom: 20px;
+}
+
+.description {
+    color: #666;
+    line-height: 1.6;
+    font-size: 1.1rem;
+    margin-bottom: 40px;
+}
+
+.tryAskingTitle {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.suggestionChips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.chip {
+    background: white;
+    border: 1px solid #ddd;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    color: #555;
+    cursor: pointer;
+    transition: all 0.2s;
+    background-color: transparent;
+}
+
+.chip:hover {
+    border-color: #3B8C6E;
+    color: #3B8C6E;
+}
+
+/* Right Panel (Chat Card) */
+.chatWrap {
+    flex: 1;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    /* Soft shadow */
+    border: 1px solid #ebebeb;
+    display: flex;
+    flex-direction: column;
+    height: 600px;
+    max-width: 800px;
+    width: 100%;
+}
+
+.cardHeader {
+    padding: 20px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.headerInfo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.botAvatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+}
+
+.botName {
+    font-weight: 600;
+    color: #333;
+    font-size: 1.1rem;
+}
+
+.botStatus {
+    font-size: 0.8rem;
+    color: #888;
+}
+
+.onlineStatus {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    background-color: #3B8C6E;
+    border-radius: 50%;
+}
+
+.agentDot {
+    width: 8px;
+    height: 8px;
+    background-color: #007bff;
+    /* Blue for agent */
+    border-radius: 50%;
+    box-shadow: 0 0 4px rgba(0, 123, 255, 0.5);
+}
+
+.agentBanner {
+    background-color: #e7f1ff;
+    color: #0056b3;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    text-align: center;
+    margin: 10px 20px;
+    border: 1px solid #b8daff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+/* Chat Area */
+.chatBox {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    background-color: #fff;
+}
+
+.msgRow {
+    display: flex;
+    gap: 12px;
+    max-width: 85%;
+}
+
+.msgRow.right {
+    margin-left: auto;
+    flex-direction: row-reverse;
+}
+
+.bubble {
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    position: relative;
+}
+
+.aiBubble {
+    background-color: #f7f7f7;
+    /* Light gray for AI */
+    color: #333;
+    border-bottom-left-radius: 2px;
+}
+
+.userBubble {
+    background-color: #f7f7f7;
+    /* Gray */
+    color: #333;
+    border-bottom-right-radius: 2px;
+}
+
+/* Input Area */
+.inputArea {
+    padding: 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 10px;
+    background: white;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+
+.inputWrapper {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input {
+    width: 100%;
+    border: 1px solid #eee;
+    background: #f9f9f9;
+    border-radius: 24px;
+    padding: 12px 20px;
+    padding-right: 90px;
+    /* Space for two buttons */
+    outline: none;
+    font-size: 0.95rem;
+    transition: border-color 0.2s;
+    resize: none;
+    height: auto;
+    min-height: 48px;
+    max-height: 150px;
+    line-height: 24px;
+    overflow-y: auto;
+    font-family: inherit;
+}
+
+.input:focus {
+    border-color: #ccc;
+    background: white;
+}
+
+.clearButton {
+    position: absolute;
+    right: 48px;
+    /* Positioned left of send button */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    color: #999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.clearButton:hover:not(:disabled) {
+    background: #f0f0f0;
+    color: #ff4d4f;
+    /* Red for delete action */
+}
+
+.clearButton:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.sendButton {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #8FA79B;
+    /* Muted green for button */
+    border: none;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.sendButton:hover:not(:disabled) {
+    background: #3B8C6E;
+}
+
+.sendButton:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.typingIndicator {
+    color: #888;
+    font-style: italic;
+    font-size: 0.9rem;
+    padding: 5px 10px;
+}
+
+
+/* Responsive */
+@media (max-width: 900px) {
+    .chatSection {
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+    }
+
+    .infoPanel {
+        max-width: 100%;
+        text-align: center;
+    }
+
+    .aiLabel,
+    .suggestionChips {
+        justify-content: center;
+    }
+
+    .title {
+        font-size: 2.5rem;
+    }
+
+    .chatWrap {
+        height: 500px;
+    }
+}
