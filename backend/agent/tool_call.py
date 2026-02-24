@@ -22,13 +22,14 @@ MILVUS_PRODUCT_DETAIL_COLLECTION = os.getenv("MILVUS_PRODUCT_DETAIL_COLLECTION")
 MILVUS_PROMOTION_COLLECTION = os.getenv("MILVUS_PROMOTION_COLLECTION")
 
 @tool
-async def product_search(query: str, min_price: Optional[int] = None, max_price: Optional[int] = None) -> str:
+async def suggest_product_search(query: str, min_price: Optional[int] = None, max_price: Optional[int] = None) -> str:
     """
-    ใช้สำหรับแนะนำหรือค้นหาสินค้านจาก Milvus (คืนผลพร้อม score)
-    - query = ข้อความที่ต้องการค้นหา
-    - min_price, max_price = ถ้ากำหนดจะกรองจาก metadata
+    Used for product recommendations or searches (returns results with score)
+    - query: Descriptive search term in Thai (e.g., 'เซรั่มแก้สิวสำหรับผิวแพ้ง่าย').
+    - min_price, max_price: Optional price range filter.
+    Note: The results provide a general product overview.
     """
-    print(f"LLM uses product_search: q={query}, min={min_price}, max={max_price}")
+    print(f"LLM uses suggest_product_search: q={query}, min={min_price}, max={max_price}")
     try:
         collection = MILVUS_PRODUCT_COLLECTION
         vectorstore = Milvus(
@@ -81,8 +82,11 @@ async def product_search(query: str, min_price: Optional[int] = None, max_price:
 @tool
 async def product_detail_search(name: str) -> str:
     """
-    ค้นหา product_id, ข้อมูล, จุดเด่น, ส่วนผสม, ช่วยแก้ไข, การใช้งาน ของสิ้นค้าจากชื่อสิ้นค้า
-    - name = ชื่อสิ้นค้า (ภาษาไทย, Eng)
+    Retrieve comprehensive product specifications, including the official product_id, 
+    key properties (benefits/highlights), active ingredients, and usage instructions.
+    - name: The specific product name in Thai or English.
+    
+    DATA INTEGRITY: Never guess the product_id or usage details; use only this tool's output.
     """
     print(f"LLM uses product_detail_search: q={name}")
     db = get_maria_session()
@@ -135,8 +139,10 @@ async def product_detail_search(name: str) -> str:
 @tool
 async def promotion_search(query: str) -> str:
     """
-    ค้นหา โปรโมชั่นที่จัดอยู่ของร้าน
-    - name = ข้อความที่ต้องการค้นหาหรือข้อมูลที่ต้องการค้นหา
+    Search for active store promotions, seasonal discounts, or specific marketing campaigns.
+    - query: Search terms in Thai related to offers (e.g., 'โปรโมชั่นเดือนนี้', 'ส่วนลดสินค้าสิว', 'แถมฟรี').
+    
+    Use this tool when the customer asks about deals, discounts, or special offers.
     """
     print(f"LLM uses promotion_search: q={query}")
     try:
@@ -235,9 +241,13 @@ async def promotion_search(query: str) -> str:
 @tool
 def track_order_tool(order_id: str, name: str) -> str:
     """
-    เครื่องมือสำหรับ ติดตามรายละเอียดใบสั่งซื้อสิ้นค้าหรือคำสั่งซื้อ
-    - order_id = code หรือ รหัสใบสั่งซื้อ (SO.XXXXXX-XXXXX)
-    - name = ชื่อ-สกุล ลูกค้า (ถ้าลูกค้าไม่ให้ชื่อ-สกุล ห้าม เรียกเครื่องมือ)
+    Track and retrieve detailed order status and shipping updates.
+    - order_id: The official Sales Order number (Format: 'SO.XXXXXX-XXXXX').
+    - name: The customer's full name (Firstname and Lastname).
+    
+    CRITICAL PRIVACY RULE: Both 'order_id' and 'name' are MANDATORY. 
+    If the customer has not provided their full name yet, you MUST ask for it first. 
+    DO NOT call this tool if the 'name' is missing or incomplete.
     """
     URL = os.getenv("TRACK_ORDER_API")
     TOKEN = os.getenv("CREATE_ORDER_TOKEN")
@@ -269,7 +279,7 @@ def track_order_tool(order_id: str, name: str) -> str:
     pay_amount = v.get("pay_amount") or "-"
     shipping = v.get("shipping") or "-"
     pay_by = v.get("pay_by") or "-"
-    is_payment = v.get("is_payment") or v.get("postatus") or "-"
+    is_payment = v.get("postatus") or "-"
 
     shipping_code = v.get("shipping_code") or "-"
     address = v.get("address") or "-"
@@ -304,7 +314,7 @@ def track_order_tool(order_id: str, name: str) -> str:
   
 @tool
 def cancel_order():
-    """เครื่องมือสำหรับยกเลิกคำสั่งซื้อสิ้นค้า"""
+    """Tool for cancelling an order."""
     print("LLM is trying to use cancel_order")
     return "ถ้าลูกค้าจะยกเลิกสั่งซื้อสิ้นค้า ให้คุณสร้าง ticket ให้ลูกค้าด้วย เครื่องมือ create_ticket เพื่อให้เจ้าหน้าที่ที่เป็นมนุษย์ให้บริการแทน"
 
@@ -328,24 +338,30 @@ def get_registered_tools():
 
 @tool
 def create_order(data: CreateOrderInput) -> str:
-    """เครื่องมือสำหรับสร้างคำสั่งซื้อสิ้นค้า"""
+    """Submit a final purchase order to the system.
+    - data: An object containing customer details, shipping address, and order items.
+    
+    CRITICAL: Every 'product_id' in the 'sodetail' list MUST be an exact integer retrieved 
+    from a successful 'product_detail_search' call in the current session.
+    STRICTLY PROHIBITED: Do not guess, assume, or fabricate any product_id.
+    """
     print("LLM is trying to use create_order")
-    # print(data.model_dump())
+    print(data.model_dump())
 
     check = val_address(
-    province=data.province,
-    district=data.district,
-    subdistrict=data.subdistrict,
+    province=data.province, #กรุงเทพ
+    district=data.district, #บางกอกน้อย
+    subdistrict=data.subdistrict, #อรุณอมรินทร์
     zipcode=data.zipcode
     )
 
-    # print("INPUT:", {
-    #     "province": data.province,
-    #     "district": data.district,
-    #     "subdistrict": data.subdistrict,
-    #     "zipcode": data.zipcode
-    # })
-    # print("CHECK RESULT:", check)
+    print("INPUT:", {
+        "province": data.province,
+        "district": data.district,
+        "subdistrict": data.subdistrict,
+        "zipcode": data.zipcode
+    })
+    print("CHECK RESULT:", check)
 
     if not check["ok"]:
         return json.dumps({
@@ -422,6 +438,7 @@ def create_order(data: CreateOrderInput) -> str:
 
             "sodetail": [item.model_dump() for item in data.sodetail],
         }
+        print("REAL_PAYLOAD_SENDING:", json.dumps(payload, ensure_ascii=False))
         db = get_maria_session()
         try:
             resp = requests.post(URL, headers=headers, json=payload)
@@ -444,6 +461,7 @@ def create_order(data: CreateOrderInput) -> str:
                 "api_response": response_data,
                 "Order number": so_code
             }
+            print("final_output", final_output)
             return json.dumps(final_output, ensure_ascii=False, indent=2)
 
         except Exception as e:
@@ -454,10 +472,15 @@ def create_order(data: CreateOrderInput) -> str:
 
 @tool
 def create_ticket(data: CreateTicketInput, session_id: str) -> str:
-    """เครื่องมือสำหรับสร้าง ticket ผ่าน API
-    *ใช้เครื่องมือนี้เฉพาะตอนที่คุณให้บริการลูกค้าไม่ได้หรือลูกค้าต้องการคุยกับเจ้าหน้าที่ที่เป็นคน*
-    Input: data = ข้อมูลตั๋ว, session_id = session id ของแชทที่กำลังสนทนา
-    Output: code = หมายเลขตั๋ว
+    """
+    Create an official support ticket for issues that require manual intervention by a human agent.
+    USAGE CRITERIA (Use ONLY when):
+    1. The customer explicitly requests to talk to a human or "Admin".
+    2. The issue involves complex requests like refunds, order cancellations, or complaints that tools cannot handle.
+    3. You have reached a dead-end and cannot assist the customer further with available tools.
+    
+    Input: data = ticket information, session_id = session ID of the current chat.
+    Returns: A ticket reference number (e.g., 'SR.XXXXX-XXXXX').
     """
 
     print("LLM is trying to use create_ticket")

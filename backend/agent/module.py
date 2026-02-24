@@ -23,11 +23,14 @@ class CollectionCreate(BaseModel):
 class WebURL(BaseModel):
     url: str
 
+
 class ConfigUpdate(BaseModel):
-    model: str
-    temperature: Optional[float] = 0.2
-    top_p: Optional[float] = 0 
-    system_prompt: str
+    model: Optional[str] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    system_prompt: Optional[str] = None
+    fallback_score: Optional[float] = None
+    fallback_message: Optional[str] = None
 
 class LoginIn(BaseModel):
     name: str
@@ -40,7 +43,7 @@ class IntentCreate(BaseModel):
 
 class SoDetail(BaseModel):
     """รายละเอียดสินค้าในคำสั่งซื้อ 1 รายการ"""
-    product_id: int = Field(..., description="รหัสสินค้า (ค้นหาได้จากเครื่องมือ product_detail_search) ")
+    product_id: int = Field(..., description="รหัสสินค้า (Find From product_detail_search) ")
     line: int = Field(..., description="ลำดับบรรทัดในใบสั่งซื้อ")
     QTY: int = Field(..., description="จำนวนชิ้น")
 
@@ -49,8 +52,8 @@ class CreateOrderInput(BaseModel):
     name: str = Field(..., description="ชื่อผู้สั่งซื้อ")
     tel: str = Field(..., description="เบอร์โทรลูกค้า")
 
-    discount: str = Field(..., description="ส่วนลด (ไม่มีใส่ 0)")
-    discountdetail: str = Field(..., description="ส่วนลด (ไม่มีใส่ 0%)")
+    discount: str = Field(..., description="ส่วนลด (ห้ามปล่อยว่างเด็ดขาด หากไม่มีให้ใส่ '0' เสมอ)")
+    discountdetail: str = Field(..., description="ส่วนลด (ห้ามปล่อยว่างเด็ดขาด หากไม่มีให้ใส่ '0%' เสมอ)")
     pay_amount: float = Field(..., description="ยอดที่ต้องชำระสุดท้าย")
     pay_by: str = Field(..., description="ช่องทางการชำระเงิน เช่น โอนเงิน, เก็บปลายทาง")
 
@@ -83,7 +86,7 @@ class ticketCustomer(BaseModel):
     email: str = Field(..., description="อีเมลลูกค้า")
 
 class CreateTicketInput(BaseModel):
-    category_fullname: str = Field(..., description="หมวดหมู่เคส 1.'สอบถาม > โปรโมชัน' 2.'รับแจ้ง' 3.'ร้องเรียน' 4.'เปิดใบสั่งซื้อ'")
+    category_fullname: str = Field(..., description="หมวดหมู่เคส 1.'สอบถาม > โปรโมชัน' 2.'รับแจ้ง' 3.'ร้องเรียน' 4.'เปิดใบสั่งซื้อ' (ใส่ได้แค่ 4 ข้อนี้เท่านั้น)")
     customer: ticketCustomer = Field(..., description="ข้อมูลลูกค้า")
     detail: str = Field(..., description="รายละเอียดที่ลูกค้าอยากสอบถาม")
 

@@ -35,7 +35,7 @@ export default function AdminLogin() {
       } else if (data.role === "call_center") {
         r.replace("/admin/call");
       } else {
-        setErr("role not allow");
+        setErr("username or password is wrong");
       }
     } catch (err) {
       setErr(err.message || "Login failed");

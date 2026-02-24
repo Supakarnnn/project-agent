@@ -35,7 +35,14 @@ async def get_current_llm_setting(db: AsyncSession):
         temperature=config["temperature"],
         logprobs=True,
     )
-    return llm, config["system_prompt"]
+
+    return {
+        "llm": llm,
+        "system_prompt": config["system_prompt"],
+        "fallback_score": config.get("fallback_score"),
+        "fallback_message": config.get("fallback_message"),
+    }
+
 
 # device = "cuda" if torch.cuda.is_available() else "cpu"
 # embedding_model = HuggingFaceEmbeddings(

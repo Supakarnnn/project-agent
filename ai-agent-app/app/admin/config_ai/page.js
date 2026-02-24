@@ -9,9 +9,11 @@ export default function ConfigAI() {
   const API = process.env.NEXT_PUBLIC_API_URL;
 
   const [model, setModel] = useState("");
-  const [temperature, setTemperature] = useState();
-  const [topP, setTopP] = useState();
+  const [temperature, setTemperature] = useState("");
+  const [topP, setTopP] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [fallbackScore, setFallbackScore] = useState("");
+  const [fallbackMessage, setFallbackMessage] = useState("");
 
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -21,17 +23,24 @@ export default function ConfigAI() {
     e.preventDefault();
     setMsg("");
     setErr("");
+
+    const payload = {};
+    if (model && model.trim() !== "") payload.model = model.trim();
+    if (temperature !== "") payload.temperature = Number(temperature);
+    if (topP !== "") payload.top_p = Number(topP);
+    const sp = systemPrompt?.trim?.() ?? "";
+    if (sp !== "") payload.system_prompt = sp;
+    if (fallbackScore !== "") payload.fallback_score = Number(fallbackScore);
+
+    const fm = fallbackMessage?.trim?.() ?? "";
+    if (fm !== "") payload.fallback_message = fm;
+
     try {
       const r = await fetch(`${API}/admin/update-config`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: model.trim(),
-          temperature: Number(temperature),
-          top_p: Number(topP),
-          system_prompt: systemPrompt,
-        }),
+        body: JSON.stringify(payload),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.detail || j.message || "บันทึกไม่สำเร็จ");
@@ -62,7 +71,7 @@ export default function ConfigAI() {
     return () => {
       cancelled = true;
     };
-  }, [API]); // พึ่งพาเฉพาะ API
+  }, [API]);
 
   return (
     <div className={styles.layout}>
@@ -73,15 +82,17 @@ export default function ConfigAI() {
           <LogoutButton>Logout</LogoutButton>
         </div>
 
-        {msg && <div style={{ marginTop: 10, color: "green" }}>{msg}</div>}
-        {err && <div style={{ marginTop: 10, color: "red" }}>{err}</div>}
-
         {currentConfig && (
           <div style={{ marginTop: 16, padding: 12, border: "1px solid #ddd", borderRadius: 8, background: "#fff" }}>
             <h3>Current AI config</h3>
             <p><b>Model:</b> {currentConfig.model}</p>
             <p><b>Temperature:</b> {currentConfig.temperature}</p>
             <p><b>Top P:</b> {currentConfig.top_p}</p>
+            <p><b>Fallback score:</b> {currentConfig.fallback_score}</p>
+            <p><b>Fallback message:</b></p>
+            <pre style={{ whiteSpace: "pre-wrap", background: "#f7fafc", padding: 8, borderRadius: 4 }}>
+              {currentConfig.fallback_message}
+            </pre>
             <p><b>System Prompt:</b></p>
             <pre style={{ whiteSpace: "pre-wrap", background: "#f7fafc", padding: 8, borderRadius: 4 }}>
               {currentConfig.system_prompt}
@@ -93,6 +104,7 @@ export default function ConfigAI() {
           <label>
             <div>Model</div>
             <select name="model" value={model} onChange={(e) => setModel(e.target.value)} style={{ width: "100%", padding: 6 }}>
+              <option value="">(ไม่เปลี่ยน)</option>
               <option value="gpt-4o-mini">gpt-4o-mini</option>
               <option value="gpt-4.1-nano">gpt-4.1-nano</option>
               <option value="gpt-4.1-mini-2025-04-14">gpt-4.1-mini</option>
@@ -100,46 +112,74 @@ export default function ConfigAI() {
           </label>
 
           <label>
-            <div>Temperature (0-2)(ค่าน้อย: ตอบตรงประเด็นจากเครื่องมือ, ค่าสูง: ตอบสร้างสรรค์จากเครื่องมือ)</div>
+            <div>Temperature (0-2)</div>
             <input
               type="number"
               step="0.01"
-              placeholder="0.2"
+              placeholder="เว้นว่าง = ไม่เปลี่ยน"
               min={0}
               max={2}
-              value={temperature ?? ""}
+              value={temperature}
               onChange={(e) => setTemperature(e.target.value)}
               style={{ width: 200, padding: 6 }}
             />
           </label>
 
           <label>
-            <div>Top P (0-1)(ค่าน้อย: คำตอบแคบ/เน้นชัวร์, ค่าสูง: ตอบสร้างสรรค์เป็นธรรมชาติ)</div>
+            <div>Top P (0-1)</div>
             <input
               type="number"
               step="0.01"
-              placeholder="0"
+              placeholder="เว้นว่าง = ไม่เปลี่ยน"
               min={0}
               max={1}
-              value={topP ?? ""}
+              value={topP}
               onChange={(e) => setTopP(e.target.value)}
               style={{ width: 200, padding: 6 }}
             />
           </label>
 
           <label>
-            <div>System Prompt (คำสั่งเริ่มต้นของระบบ / บทบาทหรือบุคลิก ของ AI)</div>
+            <div>Fallback score (0-1)</div>
+            <input
+              type="number"
+              step="0.01"
+              placeholder="เว้นว่าง = ไม่เปลี่ยน"
+              min={0}
+              max={1}
+              value={fallbackScore}
+              onChange={(e) => setFallbackScore(e.target.value)}
+              style={{ width: 200, padding: 6 }}
+            />
+          </label>
+
+          <label>
+            <div>Fallback message</div>
+            <textarea
+              rows={4}
+              value={fallbackMessage}
+              onChange={(e) => setFallbackMessage(e.target.value)}
+              placeholder="เว้นว่าง = ไม่เปลี่ยน"
+              style={{ width: "100%", padding: 6 }}
+            />
+          </label>
+
+          <label>
+            <div>System Prompt</div>
             <textarea
               rows={6}
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="ใส่ system prompt ที่นี่"
+              placeholder="เว้นว่าง = ไม่เปลี่ยน"
               style={{ width: "100%", padding: 6 }}
             />
           </label>
+
           <div style={{ display: "flex", gap: 8 }}>
             <button type="submit" form="configForm">Save</button>
           </div>
+          {msg && <div style={{ marginTop: 10, color: "green" }}>{msg}</div>}
+          {err && <div style={{ marginTop: 10, color: "red" }}>{err}</div>}
         </form>
       </main>
     </div>

@@ -10,7 +10,7 @@ from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate, fee
 from agent.model import get_current_llm_setting, ChatSession
 from connect_milvus import connect_milvus
 from pymilvus import utility, Collection, connections
-from agent.tool_call import (create_ticket, get_registered_tools, track_order_tool, product_search, create_order, cancel_order, product_detail_search, promotion_search)
+from agent.tool_call import (create_ticket, get_registered_tools, track_order_tool, suggest_product_search, create_order, cancel_order, product_detail_search, promotion_search)
 from intents.intent_matcher import load_intents, resolve_intent_with_context
 from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now, chat_message_log
@@ -132,12 +132,37 @@ def get_config(db: Session = Depends(get_pg_conn)):
 
 @router.post("/update-config")
 def update_config(req: ConfigUpdate, db: Session = Depends(get_pg_conn)):
-    db.execute(
-        text("INSERT INTO llm_configs (model, temperature, top_p, system_prompt) VALUES (:m, :t, :tp, :p)"),
-        {"m": req.model, "t": req.temperature, "tp": req.top_p, "p": req.system_prompt}
-    )
+    last = db.execute(text("""
+        SELECT model, temperature, top_p, system_prompt, fallback_score, fallback_message
+        FROM llm_configs
+        ORDER BY id DESC
+        LIMIT 1
+    """)).mappings().first()
+
+    def pick_str(new, old):
+        return old if (new is None or new == "") else new
+
+    def pick_num(new, old):
+        return old if (new is None) else new
+
+    payload = {
+        "m": pick_str(req.model, last["model"]),
+        "t": pick_num(req.temperature, last["temperature"]),
+        "tp": pick_num(req.top_p, last["top_p"]),
+        "p": pick_str(req.system_prompt, last["system_prompt"]),
+        "fs": pick_num(req.fallback_score, last["fallback_score"]),
+        "fm": pick_str(req.fallback_message, last["fallback_message"]),
+    }
+
+    db.execute(text("""
+        INSERT INTO llm_configs (model, temperature, top_p, system_prompt, fallback_score, fallback_message)
+        VALUES (:m, :t, :tp, :p, :fs, :fm)
+    """), payload)
+
     db.commit()
     return {"message": "updated successfully"}
+
+
 
 @router.get("/test-llm")
 def test_llm(db: Session = Depends(get_pg_conn)):
@@ -645,7 +670,7 @@ async def chat(
         "track_order_tool": track_order_tool,
         "create_order": create_order,
         "cancel_order": cancel_order,
-        "product_search": product_search,
+        "suggest_product_search": suggest_product_search,
         "product_detail_search": product_detail_search,
         "promotion_search": promotion_search,
         "create_ticket": create_ticket
@@ -654,7 +679,7 @@ async def chat(
     chosen_tools = [
         tool_registry["create_ticket"],
         tool_registry["track_order_tool"],
-        tool_registry["product_search"],
+        tool_registry["suggest_product_search"],
         tool_registry["product_detail_search"],
         tool_registry["promotion_search"],
         tool_registry["create_order"],
@@ -682,7 +707,11 @@ async def chat(
     #=====================================================================#
 
     #============================= LLM AGENT =============================#
-    llm, system_prompt = await get_current_llm_setting(db)
+    cfg = await get_current_llm_setting(db)
+    llm = cfg["llm"]
+    system_prompt = cfg["system_prompt"]
+    fallback_score = cfg["fallback_score"]
+    fallback_message = cfg["fallback_message"]
     print("react_agent start")
     agent = react_agent(llm, chosen_tools, system_prompt)
     result = await agent.ainvoke({"messages": messages, "used_tools": []})
@@ -710,7 +739,11 @@ async def chat(
     await update_session_activity(db, session_id, add_msg_count=2)
     if (close_now or "").lower() == "true":
         await close_session_now(db, session_id)
-    
+        
+    #fallback message
+    if fallback_score > prob:
+        final_result = fallback_message
+        
     ai_message_id = await chat_message_log(
         db,
         session_id=log_session_id,
@@ -722,6 +755,7 @@ async def chat(
         used_tools=used_tools or [],
         ai_confident=float(prob)
     )
+    
     return {
         "session_id": str(session_id),
         "human_message": last_human_message,

@@ -34,8 +34,8 @@ def load_address():
 
     for r in rows:
         prov = clean_name(r.get("province"))
-        amph = clean_name(r.get("amphoe"))
-        dist = clean_name(r.get("district"))
+        amph = clean_name(r.get("amphoe")) #เขต
+        subdist = clean_name(r.get("district")) #แขวง
 
         try:
             z = int(r.get("zipcode"))
@@ -43,13 +43,13 @@ def load_address():
             continue
 
         #ใช้เพื่อเช็คตรงครบหมดเลยไหม
-        idx_full.add((prov, amph, dist, z))
+        idx_full.add((prov, amph, subdist, z))
 
         #ใช้เช็คว่า ชื่อถูก แต่ zipcode ผิด
-        idx_nozip.setdefault((prov, amph, dist), set()).add(z)
+        idx_nozip.setdefault((prov, amph, subdist), set()).add(z)
         
         #ใช้เช็คว่า zipcode มีจริง แต่ชื่อไม่ตรง
-        idx_zip.setdefault(z, []).append((prov, amph, dist))
+        idx_zip.setdefault(z, []).append((prov, amph, subdist))
 
     return idx_full, idx_nozip, idx_zip
 
