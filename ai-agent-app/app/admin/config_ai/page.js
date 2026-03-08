@@ -108,6 +108,7 @@ export default function ConfigAI() {
               <option value="gpt-4o-mini">gpt-4o-mini</option>
               <option value="gpt-4.1-nano">gpt-4.1-nano</option>
               <option value="gpt-4.1-mini-2025-04-14">gpt-4.1-mini</option>
+              <option value="gpt-4.1-2025-04-14">gpt-4.1 (test only)</option>
             </select>
           </label>
 

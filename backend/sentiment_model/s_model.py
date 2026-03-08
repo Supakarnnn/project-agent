@@ -1,35 +1,36 @@
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import torch
-from pythainlp.tokenize import word_tokenize
-from pathlib import Path
+from typing import List
+from agent.model import sentiment_llm
 
-sentiment_model_path = Path(__file__).resolve().parent / "sen_model"
-tokenizer_sent = AutoTokenizer.from_pretrained(sentiment_model_path)
-model_sent = AutoModelForSequenceClassification.from_pretrained(sentiment_model_path)
-# print("sentiment_model_path)
 
-label_map = {0: "positive", 1: "neutral", 2: "negative"}
-
-def detect_sentiment(text: str) -> str:
-    if not text.strip():
+async def detect_sentiment(messages: List[str]) -> str:
+    if not messages:
         return "neutral"
 
-    tokens = word_tokenize(text, engine="newmm")
-    tokenized_text = " ".join(tokens)
-    inputs = tokenizer_sent(tokenized_text, return_tensors="pt", truncation=True, padding=True, max_length=512)
+    conversation = "\n".join(f"- {m}" for m in messages if m.strip())
+    if not conversation:
+        return "neutral"
 
-    # print(">input to model:", tokenized_text)
+    prompt = f"""You are a Thai Sentiment Analysis expert.
+    Analyze the OVERALL sentiment of this customer's conversation and classify as: positive, negative, or neutral.
 
-    with torch.no_grad():
-        outputs = model_sent(**inputs)
+    Rules:
+    - "positive" = clearly expresses happiness, satisfaction, praise, or excitement.
+    - "negative" = clearly expresses anger, disappointment, complaint, or frustration.
+    - "neutral" = everything else: questions, facts, news, ads, product info, general statements.
+    Focus on the most recent messages but use earlier messages for context.
+    Reply with EXACTLY one word only.
 
-    pred = torch.argmax(outputs.logits, dim=1).item()
-    sentiment = label_map[pred]
+    Customer messages:
+    {conversation}
 
-    # print("predict sentiment:", sentiment)
-    return sentiment
+    Sentiment:"""
 
+    response = await sentiment_llm.ainvoke(prompt)
+    result = response.content.strip().lower()
 
-# text = "ไม่พอใจบริการเลย พนักงานพูดจาไม่ดี"
-# sentiment = detect_sentiment(text)
-# print(f"Sentiment: {sentiment}")
+    if "positive" in result:
+        return "positive"
+    elif "negative" in result:
+        return "negative"
+    else:
+        return "neutral"

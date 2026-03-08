@@ -7,6 +7,7 @@ export default function Navbar() {
       <div className={styles.brand}>Admin Panel</div>
       <ul className={styles.menu}>
         <li><a href="/admin">Admin Dashboard</a></li>
+        <li><a href="/admin/add_product">Add New Product</a></li>
         <li><a href="/admin/Rag_system_v2">Ai Knowledge</a></li>
         <li><a href="/admin/Intent">Ai Tool</a></li>
         <li><a href="/admin/open_session">Open Chat Session</a></li>

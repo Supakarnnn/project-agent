@@ -10,7 +10,7 @@ export default function ChatBox({ chatRef }) {
     // fixed ai message
     const INITIAL_MESSAGE = {
         role: "ai",
-        content: "สวัสดี เราคือ HealthCare++ 🩺 พร้อมช่วยแนะนำสินค้าสุขภาพให้คุณค่ะ",
+        content: "สวัสดีค่ะ ฉันชื่อ Vitails 🩺 พร้อมช่วยแนะนำสินค้าสุขภาพให้คุณค่ะ",
     };
 
     // storage keys
@@ -155,8 +155,16 @@ export default function ChatBox({ chatRef }) {
 
         try {
             const historyForBackend = nextMessages
-                .filter((m) => ["human", "ai", "system"].includes(m.role))
-                .map((m) => ({ role: m.role, content: m.content }));
+                .filter((m) => ["human", "ai", "system", "agent"].includes(m.role))
+                .map((m) => {
+                    if (m.role === "agent") {
+                        return {
+                            role: "ai",
+                            content: `[Call Center Agent]: ${m.content}`
+                        };
+                    }
+                    return { role: m.role, content: m.content };
+                });
 
             const response = await fetch(
                 (process.env.NEXT_PUBLIC_API_URL || "") + "/chat",

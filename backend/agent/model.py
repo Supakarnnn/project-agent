@@ -42,6 +42,18 @@ async def get_current_llm_setting(db: AsyncSession):
         "fallback_score": config.get("fallback_score"),
         "fallback_message": config.get("fallback_message"),
     }
+    
+summary_llm = ChatOpenAI(
+    api_key=os.environ.get("OPENAI_KEY"),
+    model="gpt-4o-mini",
+    temperature=0,
+)
+
+sentiment_llm = ChatOpenAI(
+    api_key=os.environ.get("OPENAI_KEY"),
+    model="gpt-4.1-nano-2025-04-14",
+    temperature=0,
+)
 
 
 # device = "cuda" if torch.cuda.is_available() else "cpu"

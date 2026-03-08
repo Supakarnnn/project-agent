@@ -5,9 +5,35 @@ WITH intent_sessions AS (
   SELECT id AS session_id
   FROM chat_sessions
   WHERE active_intent = 'create_order'
+    AND started_at >= :start_date
+    AND closed_at <= :end_date
 ),
 ai_create_order AS (
-  SELECT DISTINCT session_id
+  SELECT cm.session_id
+  FROM chat_messages cm
+  WHERE cm.used_tools @> '["create_order"]'::jsonb
+    AND cm.created_at >= :start_date
+    AND cm.created_at <= :end_date
+)
+SELECT
+  COUNT(*) AS intent_sessions,
+  (SELECT COUNT(*) FROM ai_create_order) AS ai_create_order,
+  ROUND(
+    (SELECT COUNT(*) FROM ai_create_order)::numeric
+    / NULLIF(COUNT(*), 0) * 100,
+    2
+  ) AS complete_rate
+FROM intent_sessions;
+""")
+
+ORDER_COMPLETION_ALL_SQL = text("""
+WITH intent_sessions AS (
+  SELECT id AS session_id
+  FROM chat_sessions
+  WHERE active_intent = 'create_order'
+),
+ai_create_order AS (
+  SELECT session_id
   FROM chat_messages
   WHERE used_tools @> '["create_order"]'::jsonb
 )
@@ -21,7 +47,7 @@ SELECT
 FROM intent_sessions;
 """)
 
-TICKET_CREATE_SQL = text("""
+TICKET_CREATE_ALL_SQL = text("""
 WITH all_sessions AS (
   SELECT id AS session_id
   FROM chat_sessions
@@ -43,7 +69,32 @@ SELECT
 
 """)
 
-AVG_AI_CON_SQL = text("""
+TICKET_CREATE_SQL = text("""
+WITH all_sessions AS (
+  SELECT id AS session_id
+  FROM chat_sessions
+  WHERE started_at >= :start_date
+    AND closed_at <= :end_date
+),
+handoff_sessions AS (
+  SELECT session_id
+  FROM chat_messages cm
+  WHERE cm.used_tools @> '["create_ticket"]'::jsonb
+    AND cm.created_at >= :start_date
+    AND cm.created_at <= :end_date
+)
+SELECT
+  (SELECT COUNT(*) FROM all_sessions) AS total_sessions,
+  (SELECT COUNT(*) FROM handoff_sessions) AS handoff_sessions,
+  ROUND(
+    (SELECT COUNT(*) FROM handoff_sessions)::numeric
+    / NULLIF((SELECT COUNT(*) FROM all_sessions), 0)
+    * 100
+  , 2) AS handoff_rate
+;
+""")
+
+AVG_AI_CON_ALL_SQL = text("""
 SELECT
   COUNT(*) AS ai_message_count,
   ROUND(AVG(ai_confident)::numeric, 4) AS avg_ai_confident
@@ -51,7 +102,18 @@ FROM chat_messages
 WHERE ai_message IS NOT NULL
   AND ai_message <> ''
   AND ai_confident IS NOT NULL;
-                      
+""")
+
+AVG_AI_CON_SQL = text("""
+SELECT
+  COUNT(*) AS ai_message_count,
+  ROUND(AVG(ai_confident)::numeric, 4) AS avg_ai_confident
+FROM chat_messages
+WHERE ai_message IS NOT NULL
+  AND ai_message <> ''
+  AND ai_confident IS NOT NULL
+  AND created_at >= :start_date
+  AND created_at <= :end_date;
 """)
 
 #============Keyword & Topic Frequency func============#
@@ -70,7 +132,7 @@ SYS_PROMPT = """
 You are a customer message summarization system for creating dashboards.
 Respond only in JSON format. No other text is allowed.
 Topic should be an array of 3-8 words/phrases (Thai acceptable), focusing on customer Topic.
-Keywords should be an array of 3-8 words/phrases (Thai acceptable), focusing on customer Keywords.
+Keywords should be an array of 6-10 words/phrases (Thai acceptable), focusing on customer Keywords.
 Do not use filler words such as ค่ะ ครับ คับ คะ นะ หน่อย ขอบคุณ ได้ไหม.
 If the message is unclear, set the topic to "อื่นๆ".
 """
@@ -83,7 +145,20 @@ LIMIT 1
 """)
 #=======================================================#
 
-AVG_SESSION_TIME = text("""
+AVG_SESSION_TIME_SQL = text("""
+SELECT
+  COUNT(*) AS session_used,
+  ROUND(AVG(message_count)::numeric, 2) AS avg_message_count,
+  ROUND(AVG(total_duration_sec)::numeric, 2) AS avg_session_duration_sec,
+  ROUND(AVG(total_duration_sec) / 60.0, 2) AS avg_session_duration_min
+FROM chat_sessions
+WHERE message_count > 0
+  AND total_duration_sec IS NOT NULL
+  AND started_at >= :start_date
+  AND started_at <= :end_date;
+""")
+
+AVG_SESSION_TIME_ALL_SQL = text("""
 SELECT
   COUNT(*) AS session_used,
   ROUND(AVG(message_count)::numeric, 2) AS avg_message_count,

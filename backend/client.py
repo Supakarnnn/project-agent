@@ -1,20 +1,22 @@
 import asyncio, logging
 import torch, json
 from typing import Any, Dict, List, Optional
+from datetime import date, datetime, time, timedelta
 from fastapi import Request, Depends, HTTPException, APIRouter, Header
 from fastapi import FastAPI, Response, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
 from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate, feedbackget
-from agent.model import get_current_llm_setting, ChatSession
+from agent.model import get_current_llm_setting, ChatSession, summary_llm
 from connect_milvus import connect_milvus
 from pymilvus import utility, Collection, connections
 from agent.tool_call import (create_ticket, get_registered_tools, track_order_tool, suggest_product_search, create_order, cancel_order, product_detail_search, promotion_search)
 from intents.intent_matcher import load_intents, resolve_intent_with_context
 from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now, chat_message_log
-from log_func.sql_text import ORDER_COMPLETION_SQL, TICKET_CREATE_SQL,AVG_AI_CON_SQL, UNPROCESSED_MESSAGES, INSERT_MESSAGE_INSIGHT, KEYWORD_TOPIC, AVG_SESSION_TIME, UPSERT_FEEDBACK
+from log_func.sql_text import ORDER_COMPLETION_SQL, TICKET_CREATE_SQL,AVG_AI_CON_SQL, UNPROCESSED_MESSAGES, INSERT_MESSAGE_INSIGHT, KEYWORD_TOPIC, AVG_SESSION_TIME_SQL, UPSERT_FEEDBACK, ORDER_COMPLETION_ALL_SQL, TICKET_CREATE_ALL_SQL
+from log_func.sql_text import AVG_AI_CON_ALL_SQL, AVG_SESSION_TIME_ALL_SQL
 from log_func.message_insight import extract_insight_with_llm, normalize_insight
 from sentiment_model.s_model import detect_sentiment
 from auth_admin.auth import verify_password, hash_password
@@ -494,8 +496,25 @@ def chat_log(db: Session = Depends(get_pg_conn), page: int = 1, limit: int = 20)
     }
 
 @router.get("/get_order_complete")
-def get_order_complete(db: Session = Depends(get_pg_conn)):
-    row = db.execute(ORDER_COMPLETION_SQL).mappings().first()
+def get_order_complete(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: Session = Depends(get_pg_conn),
+):
+    if not start_date or not end_date:
+        row = db.execute(ORDER_COMPLETION_ALL_SQL).mappings().first()
+    else:
+        start_dt = datetime.combine(start_date, time.min)
+        end_dt = datetime.combine(end_date, time(23, 59, 59))
+
+        row = db.execute(
+            ORDER_COMPLETION_SQL,
+            {
+                "start_date": start_dt,
+                "end_date": end_dt,
+            },
+        ).mappings().first()
+
     return {
         "intent_sessions": int(row["intent_sessions"] or 0),
         "ai_create_order": int(row["ai_create_order"] or 0),
@@ -503,8 +522,25 @@ def get_order_complete(db: Session = Depends(get_pg_conn)):
     }
 
 @router.get("/get_handoff")
-def get_handoff(db: Session = Depends(get_pg_conn)):
-    row = db.execute(TICKET_CREATE_SQL).mappings().first()
+def get_handoff(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: Session = Depends(get_pg_conn),
+):
+    if not start_date or not end_date:
+        row = db.execute(TICKET_CREATE_ALL_SQL).mappings().first()
+    else:
+        start_dt = datetime.combine(start_date, time.min)
+        end_dt = datetime.combine(end_date, time(23, 59, 59))
+
+        row = db.execute(
+            TICKET_CREATE_SQL,
+            {
+                "start_date": start_dt,
+                "end_date": end_dt,
+            },
+        ).mappings().first()
+
     return {
         "total_sessions": int(row["total_sessions"] or 0),
         "handoff_sessions": int(row["handoff_sessions"] or 0),
@@ -512,21 +548,57 @@ def get_handoff(db: Session = Depends(get_pg_conn)):
     }
 
 @router.get("/avg_ai_con")
-def avg_ai_con(db: Session = Depends(get_pg_conn)):
-    row = db.execute(AVG_AI_CON_SQL).mappings().first()
-    return{
+def avg_ai_con(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: Session = Depends(get_pg_conn),
+):
+    if not start_date or not end_date:
+        row = db.execute(AVG_AI_CON_ALL_SQL).mappings().first()
+    else:
+        start_dt = datetime.combine(start_date, time.min)
+        end_dt = datetime.combine(end_date, time(23, 59, 59))
+
+        row = db.execute(
+            AVG_AI_CON_SQL,
+            {
+                "start_date": start_dt,
+                "end_date": end_dt,
+            },
+        ).mappings().first()
+
+    avg_ai_confident = float((row["avg_ai_confident"] or 0.0) * 100)
+
+    return {
         "ai_message_count": int(row["ai_message_count"] or 0),
-        "avg_ai_confident": float(row["avg_ai_confident"] * 100 or 0.0)
+        "avg_ai_confident": avg_ai_confident,
     }
 
 @router.get("/avg_session_time")
-def avg_session_time(db: Session = Depends(get_pg_conn)):
-    row = db.execute(AVG_SESSION_TIME).mappings().first()
-    return{
+def avg_session_time(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: Session = Depends(get_pg_conn),
+):
+    if not start_date or not end_date:
+        row = db.execute(AVG_SESSION_TIME_ALL_SQL).mappings().first()
+    else:
+        start_dt = datetime.combine(start_date, time.min)
+        end_dt = datetime.combine(end_date, time(23, 59, 59))
+
+        row = db.execute(
+            AVG_SESSION_TIME_SQL,
+            {
+                "start_date": start_dt,
+                "end_date": end_dt,
+            },
+        ).mappings().first()
+
+    return {
         "session_used": int(row["session_used"] or 0),
-        "avg_message_count": int(row["avg_message_count"] or 0),
-        "avg_session_duration_sec": int(row["avg_session_duration_sec"] or 0),
-        "avg_session_duration_min": int(row["avg_session_duration_min"] or 0),
+        "avg_message_count": float(row["avg_message_count"] or 0.0),
+        "avg_session_duration_sec": float(row["avg_session_duration_sec"] or 0.0),
+        "avg_session_duration_min": float(row["avg_session_duration_min"] or 0.0),
     }
 
 @router.get("/get_key_top")
@@ -540,15 +612,18 @@ def get_key_top(db: Session = Depends(get_pg_conn)):
 @router.post("/run_llm_insight")
 def run_llm_insight(
     db: Session = Depends(get_pg_conn),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(300, ge=1, le=500),
     model_name: str = Query("gpt-4o-mini"),
 ):
     rows = db.execute(UNPROCESSED_MESSAGES, {"limit": limit}).mappings().all()
 
+    print("rows from db =", len(rows))
+
     messages = [(r.get("human_message") or "").strip() for r in rows]
     messages = [m for m in messages if m]
+
     if not messages:
-        return {"ok": True,"raw": None}
+        return {"ok": True, "raw": None}
 
     combined = "\n\n---\n\n".join(messages)
     raw = extract_insight_with_llm(combined)
@@ -564,7 +639,7 @@ def run_llm_insight(
     )
 
     db.commit()
-    return {"ok": True,"raw": raw}
+    return {"ok": True, "raw": raw}
 
 @router.post("/give_feedback")
 def give_feedback(data: feedbackget, db: Session = Depends(get_pg_conn)):
@@ -594,6 +669,64 @@ async def chat(
     external_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
     close_now: Optional[str] = Header(None, alias="X-Close-Session"),
 ):
+    # messages = []
+    # recent_messages = []
+    # humanmes = []
+    # aimanmes = []
+    
+    # await autoclose_inactive_sessions(db)
+    # session_id = await get_or_create_session(db, external_session_id)
+    # log_session_id = str(session_id)
+
+    # last_human_message = ""
+    # for m in reversed(chatmessage.messages):
+    #     if m.role == 'human' and m.content.strip():
+    #         last_human_message = m.content.strip()
+    #         break
+
+    # print("\n=== Incoming Messages Check ===")
+    # for i, chat in enumerate(chatmessage.messages):
+    #     print(f"[{i+1}] Role: {chat.role} | Content: {chat.content}")
+    # print("===============================\n")
+
+    # MAX_RECENT_MESSAGES = 10
+    # summary_message = None
+
+    # if len(chatmessage.messages) > MAX_RECENT_MESSAGES:
+    #     older_raw = chatmessage.messages[:-MAX_RECENT_MESSAGES]
+    #     recent_raw = chatmessage.messages[-MAX_RECENT_MESSAGES:]
+        
+    #     older_text = "\n".join([f"{m.role}: {m.content}" for m in older_raw])
+    #     summary_prompt = f"Summarize the key points of the following conversation as concisely as possible to provide context for the AI ​​to answer the following questions.:\n{older_text}"
+    #     print("summary llm start")
+    #     summary_result = await summary_llm.ainvoke([HumanMessage(content=summary_prompt)])
+    #     print("summary llm end")
+    #     summary_message = SystemMessage(content=f"[SUMMARY OF PAST CONVERSATION]: {summary_result.content}")
+    # else:
+    #     recent_raw = chatmessage.messages
+
+    # print("summary_message:", summary_message)
+
+    # for chat in recent_raw:
+    #     if chat.role == 'ai':
+    #         recent_messages.append(AIMessage(content=chat.content))
+    #         aimanmes.append(chat.content.strip())
+    #     elif chat.role == 'human':
+    #         recent_messages.append(HumanMessage(content=chat.content))
+    #         humanmes.append(chat.content.strip())
+    #     elif chat.role == 'system':
+    #         recent_messages.append(SystemMessage(content=chat.content))
+    #     elif chat.role == 'agent':
+    #         formatted_content = f"[Call Center Agent (Human)]: {chat.content}"
+    #         recent_messages.append(AIMessage(content=formatted_content))
+    #         aimanmes.append(formatted_content)
+    
+    # if summary_message:
+    #     messages.append(summary_message)
+        
+    # messages.extend(recent_messages)
+    # print("api message recived")
+    
     messages = []
     humanmes = []
     aimanmes = []
@@ -636,7 +769,7 @@ async def chat(
                 "source": "http",
             })
 
-        sentiment = await asyncio.to_thread(detect_sentiment, last_human_message)
+        sentiment = await detect_sentiment(humanmes)
         if sentiment == "negative":
             sentiment_content = "ลูกค้าอยู่ในอารมณ์ไม่ดี กรุณาตอบกลับด้วยความสุภาพและช่วยให้เขาใจเย็นลง"
         elif sentiment == "positive":
@@ -692,7 +825,10 @@ async def chat(
     #=====================================================================#
 
     #=============================== SENTIMENT ===========================#
-    sentiment = await asyncio.to_thread(detect_sentiment, last_human_message)
+    print("sentiment start")
+    sentiment = await detect_sentiment(humanmes)
+    print("sentiment = ", sentiment)
+    print("sentiment end")
     if sentiment == "negative":
         sentiment_content = "ลูกค้าอยู่ในอารมณ์ไม่ดี กรุณาตอบกลับด้วยความสุภาพและช่วยให้ลูกค้าใจเย็นลง"
     elif sentiment == "positive":
@@ -720,6 +856,9 @@ async def chat(
     final_msg: AIMessage = result["messages"][-1]
     final_result: str = final_msg.content
     print("react_agent end")
+    
+    #======================CHECK TOKEN===================================#
+    print("usage_metadata:", final_msg.usage_metadata)
     #=====================================================================#
 
     #=========================== CONFIDENCE ==============================#

@@ -83,58 +83,55 @@ async def suggest_product_search(query: str, min_price: Optional[int] = None, ma
 async def product_detail_search(name: str) -> str:
     """
     Retrieve comprehensive product specifications, including the official product_id, 
-    key properties (benefits/highlights), active ingredients, and usage instructions.
+    key properties , active ingredients, How to use, size_volume, cost, stock_qty, notes and usage_instructions.
     - name: The specific product name in Thai or English.
     
     DATA INTEGRITY: Never guess the product_id or usage details; use only this tool's output.
     """
     print(f"LLM uses product_detail_search: q={name}")
-    db = get_maria_session()
     try:
-        row = db.execute(
-            text("""
-                SELECT id,name,name_eng,detail,brand,key_features,key_ingredients,suitable_for_concern,usage_instructions,size_volume,cost,stock_qty,notes,category_l1,category_l2
-                FROM tbl_material
-                WHERE name LIKE :n OR name_eng LIKE :n
-                LIMIT 1
-            """),
-            {"n": f"%{name}%"}
-        ).mappings().first()
+        collection = MILVUS_PRODUCT_COLLECTION
+        vectorstore = Milvus(
+            embedding_function=embedding_model,
+            collection_name=collection,
+            connection_args={"uri": f"http://{MILVUS_HOST}:{MILVUS_PORT}"},
+        )
 
-        product_data = {
-            "product_id": row["id"],
-            "ชื่อ": row["name"],
-            "ชื่อ (Eng)": row["name_eng"],
-            "รายละเอียด": row["detail"],
-            "แบรนด์": row["brand"],
-            "ประเภทสินค้า": row["category_l1"],
-            "ชนิดสินค้า": row["category_l2"],
-            "จุดเด่น": row["key_features"],
-            "ส่วนประกอบสำคัญ": row["key_ingredients"],
-            "ช่วยแก้ไข": row["suitable_for_concern"],
-            "คำแนะนำการใช้งาน": row["usage_instructions"],
-            "ขนาด": row["size_volume"],
-            "ราคา (ต่อ 1 ชิ้น)": row["cost"],
-            "คงเหลือในระบบ": row["stock_qty"],
-            "หมายเหตุ": row["notes"]
-        }
+        k = 5
+        results = await vectorstore.asimilarity_search_with_score(name, k=k)
+        if not results:
+            return f"ไม่สิ้นค้าที่เกี่ยวข้องกับ {name}"
 
-        final_output = {
-            "success": True,
-            "message": "ดึงข้อมูลสำเร็จ",
-            "order": product_data
-        }
+        lines = []
+        for doc, dist in results:
+            sim = 1.0 - float(dist)
+            if sim < 0.05:
+                continue
 
-        print("[product_detail_search] OUTPUT:", final_output)
+            m = doc.metadata or {}
+            product_id = m.get("id")
+            name = m.get("name") or "(ไม่มีชื่อ)"
+            name_eng = m.get("name_eng") or "(ไม่มีชื่อ)"
+            detail = m.get("detail") or ""
+            brand = m.get("brand")
+            category_l1 = m.get("category_l1")
+            category_l2 = m.get("category_l2")
+            key_features = m.get("key_features")
+            suitable_for_concern = m.get("suitable_for_concern")
+            size_volume = m.get("size_volume")
+            cost = m.get("cost")
+            lines.append(f"- product_id {product_id} | {name} | {name_eng} | รายละเอียด: {detail} | แบรนด์: {brand} | หมวดหมู่:{category_l1},{category_l2} | จุดเด่น: {key_features} | ช่วยแก้ไข: {suitable_for_concern} | ขนาด: {size_volume} | ราคา:{cost} | (similarity={sim:.2f})")
 
-        return json.dumps(final_output, ensure_ascii=False, indent=2)
+        if not lines:
+            return f"ไม่สิ้นค้าที่เกี่ยวข้องกับ {name}"
+
+        output = "นี้คือข้อมูลที่ค้นเจอ :\n" + "\n".join(lines)
+        print(output)
+        return output
 
     except Exception as e:
-        print(f"เกิดข้อผิดพลาด: {str(e)}")
-        return f"เครื่องมือมีปัญหาชั่วคราว"
-
-    finally:
-        db.close()
+        print(e)
+        return "เครื่องมือมีปัญหาชั่วคราว"
        
 @tool
 async def promotion_search(query: str) -> str:

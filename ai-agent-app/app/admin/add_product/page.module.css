@@ -1,0 +1,29 @@
+.layout {
+    display: flex;
+    min-height: 100vh;
+    font-family: sans-serif;
+}
+
+.main {
+    flex: 1;
+    padding: 20px;
+    background: #f7fafc;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.title {
+    margin: 0;
+    font-size: 22px;
+}
+
+.subtitle {
+    margin: 6px 0 0 0;
+    color: #64748b;
+    font-size: 13px;
+}

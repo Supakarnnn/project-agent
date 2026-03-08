@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "./Component/nav";
 import { LogoutButton } from "./Component/logout";
@@ -37,7 +37,6 @@ function MetricCard({ title, subtitle, children, footer, loading, error }) {
 
 export default function AdminPage() {
   const r = useRouter();
-
   const API = useMemo(() => process.env.NEXT_PUBLIC_API_URL, []);
 
   const [loading, setLoading] = useState(true);
@@ -50,6 +49,9 @@ export default function AdminPage() {
   const [avgaiMetric, setAvgaiMetric] = useState(null);
   const [avgsessionMetric, setAvgsessionMetric] = useState(null);
   const [ktMetric, setKtMetric] = useState({ a_topic: [], a_key: [] });
+
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   useEffect(() => {
     const check = async () => {
@@ -72,6 +74,72 @@ export default function AdminPage() {
     check();
   }, [r, API]);
 
+  const buildDateQuery = useCallback(() => {
+    const params = new URLSearchParams();
+
+    if (startDate) params.append("start_date", startDate);
+    if (endDate) params.append("end_date", endDate);
+
+    const query = params.toString();
+    return query ? `?${query}` : "";
+  }, [startDate, endDate]);
+
+  const fetchMetric = useCallback(async () => {
+    if (!me) return;
+
+    setMLoading(true);
+    setMError("");
+
+    try {
+      const dateQuery = buildDateQuery();
+
+      const resp = await fetch(API + "/admin/get_order_complete" + dateQuery, {
+        credentials: "include",
+      });
+
+      const resp2 = await fetch(API + "/admin/get_handoff" + dateQuery, {
+        credentials: "include",
+      });
+
+      const resp3 = await fetch(API + "/admin/avg_ai_con" + dateQuery, {
+        credentials: "include",
+      });
+
+      const resp4 = await fetch(API + "/admin/get_key_top", {
+        credentials: "include",
+      });
+
+      const resp5 = await fetch(API + "/admin/avg_session_time" + dateQuery, {
+        credentials: "include",
+      });
+
+      if (!resp.ok) throw new Error("fetch_failed");
+      if (!resp2.ok) throw new Error("fetch_failed");
+      if (!resp3.ok) throw new Error("fetch_failed");
+      if (!resp4.ok) throw new Error("fetch_failed");
+      if (!resp5.ok) throw new Error("fetch_failed");
+
+      const data = await resp.json();
+      const data_handoff = await resp2.json();
+      const data_avg_ai_con = await resp3.json();
+      const data_kt = await resp4.json();
+      const data_avg_session = await resp5.json();
+
+      setOrderMetric(data);
+      setHandoffMetric(data_handoff);
+      setAvgaiMetric(data_avg_ai_con);
+      setAvgsessionMetric(data_avg_session);
+      setKtMetric({
+        a_topic: Array.isArray(data_kt.a_topic) ? data_kt.a_topic : [],
+        a_key: Array.isArray(data_kt.a_key) ? data_kt.a_key : [],
+      });
+    } catch {
+      setMError("โหลดข้อมูลไม่สำเร็จ");
+    } finally {
+      setMLoading(false);
+    }
+  }, [API, buildDateQuery, me]);
+
   const runLLMInsight = async () => {
     try {
       setMLoading(true);
@@ -79,7 +147,7 @@ export default function AdminPage() {
 
       const runResp = await fetch(
         process.env.NEXT_PUBLIC_API_URL +
-        "/admin/run_llm_insight?limit=100&model_name=gpt-4o-mini",
+        "/admin/run_llm_insight?model_name=gpt-4o-mini",
         {
           method: "POST",
           credentials: "include",
@@ -87,9 +155,8 @@ export default function AdminPage() {
       );
 
       if (!runResp.ok) throw new Error("run_llm_failed");
-      window.location.reload();
-
-    } catch (err) {
+      await fetchMetric();
+    } catch {
       setMError("อัปเดต Keyword & Topic ไม่สำเร็จ");
     } finally {
       setMLoading(false);
@@ -98,57 +165,9 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!me) return;
-
-    const fetchMetric = async () => {
-      setMLoading(true);
-      setMError("");
-      try {
-        const resp = await fetch(API + "/admin/get_order_complete", {
-          credentials: "include",
-        });
-        const resp2 = await fetch(API + "/admin/get_handoff", {
-          credentials: "include",
-        });
-        const resp3 = await fetch(API + "/admin/avg_ai_con", {
-          credentials: "include",
-        })
-        const resp4 = await fetch(API + "/admin/get_key_top", {
-          credentials: "include",
-        })
-        const resp5 = await fetch(API + "/admin/avg_session_time", {
-          credentials: "include",
-        })
-
-        if (!resp.ok) throw new Error("fetch_failed");
-        if (!resp2.ok) throw new Error("fetch_failed");
-        if (!resp3.ok) throw new Error("fetch_failed");
-        if (!resp4.ok) throw new Error("fetch_failed");
-        if (!resp5.ok) throw new Error("fetch_failed");
-
-        const data = await resp.json();
-        const data_handoff = await resp2.json();
-        const data_avg_ai_con = await resp3.json();
-        const data_kt = await resp4.json();
-        const data_avg_session = await resp5.json();
-
-        setOrderMetric(data);
-        setHandoffMetric(data_handoff);
-        setAvgaiMetric(data_avg_ai_con);
-        setAvgsessionMetric(data_avg_session);
-        setKtMetric({
-          a_topic: Array.isArray(data_kt.a_topic) ? data_kt.a_topic : [],
-          a_key: Array.isArray(data_kt.a_key) ? data_kt.a_key : [],
-        });
-
-      } catch (e) {
-        setMError("โหลดข้อมูลไม่สำเร็จ");
-      } finally {
-        setMLoading(false);
-      }
-    };
-
     fetchMetric();
-  }, [me, API]);
+  }, [me, fetchMetric]);
+
   if (!me) return null;
 
   const completeRate = orderMetric?.complete_rate ?? 0;
@@ -179,17 +198,53 @@ export default function AdminPage() {
           <LogoutButton>Logout</LogoutButton>
         </div>
 
+        <div className={styles.filterBar}>
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>Start Date</label>
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>End Date</label>
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </div>
+
+          <div className={styles.filterActions}>
+            <button className={styles.ghostBtn} onClick={fetchMetric} disabled={mLoading}>
+              {mLoading ? "Loading..." : "Apply"}
+            </button>
+
+            <button
+              className={styles.ghostBtn}
+              onClick={async () => {
+                setStartDate("");
+                setEndDate("");
+              }}
+              disabled={mLoading}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
         <div className={styles.grid}>
           <MetricCard
-            title="อัตราการทำงานสำเร็จ"
+            title="อัตราการสร้างคำสั่งซื้อสำเร็จ"
             loading={mLoading}
             error={mError}
             footer={
               <div className={styles.footerRow}>
-                <button
-                  className={styles.ghostBtn}
-                  onClick={() => window.location.reload()}
-                >
+                <button className={styles.ghostBtn} onClick={fetchMetric}>
                   Refresh
                 </button>
               </div>
@@ -220,10 +275,7 @@ export default function AdminPage() {
             error={mError}
             footer={
               <div className={styles.footerRow}>
-                <button
-                  className={styles.ghostBtn}
-                  onClick={() => window.location.reload()}
-                >
+                <button className={styles.ghostBtn} onClick={fetchMetric}>
                   Refresh
                 </button>
               </div>
@@ -249,15 +301,45 @@ export default function AdminPage() {
           </MetricCard>
 
           <MetricCard
+            title="อัตราการตอบสำเร็จ"
+            loading={mLoading}
+            error={mError}
+            footer={
+              <div className={styles.footerRow}>
+                <button className={styles.ghostBtn} onClick={fetchMetric}>
+                  Refresh
+                </button>
+              </div>
+            }
+          >
+            <div className={styles.metricRow}>
+              <div className={styles.metricMain}>
+                <div className={styles.bigNumber}>{(100 - handoff_rate).toFixed(2)}%</div>
+                <div className={styles.smallLabel}>Completion rate</div>
+              </div>
+
+              <div className={styles.metricSide}>
+                <div className={styles.kpi}>
+                  <div className={styles.kpiValue}>{total_sessions} session</div>
+                  <div className={styles.kpiLabel}>All Sessions</div>
+                </div>
+                <div className={styles.kpi}>
+                  <div className={styles.kpiValue}>{handoff_rate} %</div>
+                  <div className={styles.kpiLabel}>
+                    The rate of cases being referred to the call center.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </MetricCard>
+
+          <MetricCard
             title="Average Ai Confident"
             loading={mLoading}
             error={mError}
             footer={
               <div className={styles.footerRow}>
-                <button
-                  className={styles.ghostBtn}
-                  onClick={() => window.location.reload()}
-                >
+                <button className={styles.ghostBtn} onClick={fetchMetric}>
                   Refresh
                 </button>
               </div>
@@ -266,7 +348,9 @@ export default function AdminPage() {
             <div className={styles.metricRow}>
               <div className={styles.metricMain}>
                 <div className={styles.bigNumber}>{avg_ai_confident}%</div>
-                <div className={styles.smallLabel}>Average Ai Confident from {ai_message_count} ai message</div>
+                <div className={styles.smallLabel}>
+                  Average Ai Confident from {ai_message_count} ai message
+                </div>
               </div>
               <div className={styles.metricSide}>
                 <div className={styles.kpi}>
@@ -277,7 +361,6 @@ export default function AdminPage() {
                 </div>
               </div>
             </div>
-
           </MetricCard>
 
           <MetricCard
@@ -319,7 +402,6 @@ export default function AdminPage() {
                 </div>
               </div>
             </div>
-
           </MetricCard>
 
           <MetricCard
@@ -328,10 +410,7 @@ export default function AdminPage() {
             error={mError}
             footer={
               <div className={styles.footerRow}>
-                <button
-                  className={styles.ghostBtn}
-                  onClick={() => window.location.reload()}
-                >
+                <button className={styles.ghostBtn} onClick={fetchMetric}>
                   Refresh
                 </button>
               </div>
@@ -354,10 +433,8 @@ export default function AdminPage() {
                 <div className={styles.bigNumber}>{avg_session_duration_min}</div>
                 <div className={styles.smallLabel}>ค่าเฉลี่ยเวลาต่อ 1 Session (นาที)</div>
               </div>
-
             </div>
           </MetricCard>
-
         </div>
       </main>
     </div>
