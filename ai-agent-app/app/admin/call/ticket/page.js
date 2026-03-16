@@ -16,11 +16,20 @@ function LiveChat({ open, onClose, sessionId, ticketId, code }) {
   const [minimized, setMinimized] = useState(false);
   const wsRef = useRef(null);
 
+  const getWsBaseUrl = () => {
+    if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+    if (process.env.NEXT_PUBLIC_API_URL) {
+      return process.env.NEXT_PUBLIC_API_URL.replace(/^http/, "ws");
+    }
+    return "ws://localhost:8001";
+  };
+
   const connect = (sid) => {
     if (!sid) return;
     if (wsRef.current) wsRef.current.close();
 
-    const wsUrl = `ws://localhost:8001/ws/${sid}/agent`;
+    const wsBase = getWsBaseUrl();
+    const wsUrl = `${wsBase}/ws/${sid}/agent`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 

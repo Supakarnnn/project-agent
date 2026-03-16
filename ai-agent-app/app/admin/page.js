@@ -239,7 +239,7 @@ export default function AdminPage() {
 
         <div className={styles.grid}>
           <MetricCard
-            title="อัตราการสร้างคำสั่งซื้อสำเร็จ"
+            title="อัตราการขายสำเร็จ"
             loading={mLoading}
             error={mError}
             footer={

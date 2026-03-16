@@ -258,3 +258,35 @@
   background: #f8fafc;
   color: #0f172a;
 }
+
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 20px;
+}
+
+.filterGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filterLabel {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.dateInput {
+  min-width: 180px;
+  padding: 10px 12px;
+  border: 1px solid #dcdcdc;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.filterActions {
+  display: flex;
+  gap: 8px;
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import Navbar from "./nav";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { LogoutButton } from "../Component/logout";
 import styles from "./page.module.css";
@@ -51,6 +51,69 @@ export default function Home() {
   const [avgsessionMetric, setAvgsessionMetric] = useState(null);
   const [ktMetric, setKtMetric] = useState({ a_topic: [], a_key: [] });
 
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const buildDateQuery = useCallback(() => {
+    const params = new URLSearchParams();
+
+    if (startDate) params.append("start_date", startDate);
+    if (endDate) params.append("end_date", endDate);
+
+    const query = params.toString();
+    return query ? `?${query}` : "";
+  }, [startDate, endDate]);
+
+  const fetchMetric = useCallback(async () => {
+    setMLoading(true);
+    setMError("");
+    try {
+      const dateQuery = buildDateQuery();
+
+      const resp = await fetch(API + "/admin/get_order_complete" + dateQuery, {
+        credentials: "include",
+      });
+      const resp2 = await fetch(API + "/admin/get_handoff" + dateQuery, {
+        credentials: "include",
+      });
+      const resp3 = await fetch(API + "/admin/avg_ai_con" + dateQuery, {
+        credentials: "include",
+      });
+      const resp4 = await fetch(API + "/admin/get_key_top", {
+        credentials: "include",
+      });
+      const resp5 = await fetch(API + "/admin/avg_session_time" + dateQuery, {
+        credentials: "include",
+      });
+
+      if (!resp.ok) throw new Error("fetch_failed");
+      if (!resp2.ok) throw new Error("fetch_failed");
+      if (!resp3.ok) throw new Error("fetch_failed");
+      if (!resp4.ok) throw new Error("fetch_failed");
+      if (!resp5.ok) throw new Error("fetch_failed");
+
+      const data = await resp.json();
+      const data_handoff = await resp2.json();
+      const data_avg_ai_con = await resp3.json();
+      const data_kt = await resp4.json();
+      const data_avg_session = await resp5.json();
+
+      setOrderMetric(data);
+      setHandoffMetric(data_handoff);
+      setAvgaiMetric(data_avg_ai_con);
+      setAvgsessionMetric(data_avg_session);
+      setKtMetric({
+        a_topic: Array.isArray(data_kt.a_topic) ? data_kt.a_topic : [],
+        a_key: Array.isArray(data_kt.a_key) ? data_kt.a_key : [],
+      });
+
+    } catch (e) {
+      setMError("โหลดข้อมูลไม่สำเร็จ");
+    } finally {
+      setMLoading(false);
+    }
+  }, [API, buildDateQuery]);
+
   const runLLMInsight = async () => {
     try {
       setMLoading(true);
@@ -66,7 +129,7 @@ export default function Home() {
       );
 
       if (!runResp.ok) throw new Error("run_llm_failed");
-      window.location.reload();
+      await fetchMetric();
 
     } catch (err) {
       setMError("อัปเดต Keyword & Topic ไม่สำเร็จ");
@@ -76,56 +139,8 @@ export default function Home() {
   };
 
   useEffect(() => {
-    const fetchMetric = async () => {
-      setMLoading(true);
-      setMError("");
-      try {
-        const resp = await fetch(API + "/admin/get_order_complete", {
-          credentials: "include",
-        });
-        const resp2 = await fetch(API + "/admin/get_handoff", {
-          credentials: "include",
-        });
-        const resp3 = await fetch(API + "/admin/avg_ai_con", {
-          credentials: "include",
-        })
-        const resp4 = await fetch(API + "/admin/get_key_top", {
-          credentials: "include",
-        })
-        const resp5 = await fetch(API + "/admin/avg_session_time", {
-          credentials: "include",
-        })
-
-        if (!resp.ok) throw new Error("fetch_failed");
-        if (!resp2.ok) throw new Error("fetch_failed");
-        if (!resp3.ok) throw new Error("fetch_failed");
-        if (!resp4.ok) throw new Error("fetch_failed");
-        if (!resp5.ok) throw new Error("fetch_failed");
-
-        const data = await resp.json();
-        const data_handoff = await resp2.json();
-        const data_avg_ai_con = await resp3.json();
-        const data_kt = await resp4.json();
-        const data_avg_session = await resp5.json();
-
-        setOrderMetric(data);
-        setHandoffMetric(data_handoff);
-        setAvgaiMetric(data_avg_ai_con);
-        setAvgsessionMetric(data_avg_session);
-        setKtMetric({
-          a_topic: Array.isArray(data_kt.a_topic) ? data_kt.a_topic : [],
-          a_key: Array.isArray(data_kt.a_key) ? data_kt.a_key : [],
-        });
-
-      } catch (e) {
-        setMError("โหลดข้อมูลไม่สำเร็จ");
-      } finally {
-        setMLoading(false);
-      }
-    };
-
     fetchMetric();
-  }, [API]);
+  }, [fetchMetric]);
 
   const completeRate = orderMetric?.complete_rate ?? 0;
   const intentSessions = orderMetric?.intent_sessions ?? 0;
@@ -152,17 +167,54 @@ export default function Home() {
           <h1 className={styles.title}>Call center Dashboard</h1>
           <LogoutButton>Logout</LogoutButton>
         </div>
+
+        <div className={styles.filterBar}>
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>Start Date</label>
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>End Date</label>
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </div>
+
+          <div className={styles.filterActions}>
+            <button className={styles.ghostBtn} onClick={fetchMetric} disabled={mLoading}>
+              {mLoading ? "Loading..." : "Apply"}
+            </button>
+
+            <button
+              className={styles.ghostBtn}
+              onClick={async () => {
+                setStartDate("");
+                setEndDate("");
+              }}
+              disabled={mLoading}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
         <div className={styles.grid}>
           <MetricCard
-            title="อัตราการทำงานสำเร็จ"
+            title="อัตราการขายสำเร็จ"
             loading={mLoading}
             error={mError}
             footer={
               <div className={styles.footerRow}>
-                <button
-                  className={styles.ghostBtn}
-                  onClick={() => window.location.reload()}
-                >
+                <button className={styles.ghostBtn} onClick={fetchMetric}>
                   Refresh
                 </button>
               </div>
@@ -193,10 +245,7 @@ export default function Home() {
             error={mError}
             footer={
               <div className={styles.footerRow}>
-                <button
-                  className={styles.ghostBtn}
-                  onClick={() => window.location.reload()}
-                >
+                <button className={styles.ghostBtn} onClick={fetchMetric}>
                   Refresh
                 </button>
               </div>
@@ -227,10 +276,7 @@ export default function Home() {
             error={mError}
             footer={
               <div className={styles.footerRow}>
-                <button
-                  className={styles.ghostBtn}
-                  onClick={() => window.location.reload()}
-                >
+                <button className={styles.ghostBtn} onClick={fetchMetric}>
                   Refresh
                 </button>
               </div>
@@ -254,7 +300,7 @@ export default function Home() {
           </MetricCard>
 
           <MetricCard
-            title="Keyword & Topic"
+            title="Keyword &amp; Topic"
             loading={mLoading}
             error={mError}
             footer={
@@ -301,10 +347,7 @@ export default function Home() {
             error={mError}
             footer={
               <div className={styles.footerRow}>
-                <button
-                  className={styles.ghostBtn}
-                  onClick={() => window.location.reload()}
-                >
+                <button className={styles.ghostBtn} onClick={fetchMetric}>
                   Refresh
                 </button>
               </div>

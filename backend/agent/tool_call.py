@@ -83,14 +83,14 @@ async def suggest_product_search(query: str, min_price: Optional[int] = None, ma
 async def product_detail_search(name: str) -> str:
     """
     Retrieve comprehensive product specifications, including the official product_id, 
-    key properties , active ingredients, How to use, size_volume, cost, stock_qty, notes and usage_instructions.
+    key properties , active ingredients, How to use, size_volume, cost, stock_qty, notes and usage instructions.
     - name: The specific product name in Thai or English.
     
-    DATA INTEGRITY: Never guess the product_id or usage details; use only this tool's output.
+    DATA INTEGRITY: Never guess the product_id, usage details, or usage instructions; use only this tool's output.
     """
     print(f"LLM uses product_detail_search: q={name}")
     try:
-        collection = MILVUS_PRODUCT_COLLECTION
+        collection = MILVUS_PRODUCT_DETAIL_COLLECTION
         vectorstore = Milvus(
             embedding_function=embedding_model,
             collection_name=collection,
@@ -118,9 +118,10 @@ async def product_detail_search(name: str) -> str:
             category_l2 = m.get("category_l2")
             key_features = m.get("key_features")
             suitable_for_concern = m.get("suitable_for_concern")
+            usage_instructions = m.get("usage_instructions")
             size_volume = m.get("size_volume")
             cost = m.get("cost")
-            lines.append(f"- product_id {product_id} | {name} | {name_eng} | รายละเอียด: {detail} | แบรนด์: {brand} | หมวดหมู่:{category_l1},{category_l2} | จุดเด่น: {key_features} | ช่วยแก้ไข: {suitable_for_concern} | ขนาด: {size_volume} | ราคา:{cost} | (similarity={sim:.2f})")
+            lines.append(f"- product_id {product_id} | {name} | {name_eng} | รายละเอียด: {detail} | แบรนด์: {brand} | หมวดหมู่:{category_l1},{category_l2} | จุดเด่น: {key_features} | ช่วยแก้ไข: {suitable_for_concern} | วิธีใช้: {usage_instructions} | ขนาด: {size_volume} | ราคา:{cost}")
 
         if not lines:
             return f"ไม่สิ้นค้าที่เกี่ยวข้องกับ {name}"
@@ -179,62 +180,6 @@ async def promotion_search(query: str) -> str:
         print(e)
         return "เครื่องมือมีปัญหา"
     
-# @tool
-# def track_order_tool(order_id: str, name: str) -> str:
-#     """
-#     เครื่องมือสำหรับ ติดตามรายละเอียดใบสั่งซื้อสิ้นค้าหรือคำสั่งซื้อ
-#     - order_id = code หรือ รหัสใบสั่งซื้อ (SO.XXXXXX-XXXXX)
-#     - name = ชื่อ-สกุล ลูกค้า 
-#     """
-#     print(f"LLM is try using track_order_tool with {order_id} and {name}")
-#     db = get_maria_session()
-
-#     try:
-#         row = db.execute(
-#             text("""
-#                 SELECT 
-#                     name,tel,code,shipping,pay_amount,shipping_code,
-#                     address,province,district,subdistrict,zipcode,postatus
-#                 FROM tbl_so
-#                 WHERE code = :c AND name = :n
-#                 LIMIT 1
-#             """),
-#             {"c": order_id, "n": name}
-#         ).mappings().first()
-
-#         order_data = {
-#             "name": row["name"],
-#             "tel": row["tel"],
-#             "code": row["code"],
-#             "shipping": float(row["shipping"]) if row["shipping"] else None,
-#             "pay_amount": float(row["pay_amount"]) if row["pay_amount"] else None,
-#             "total_amount (ราคาสิ้นค้า + ค่าจัดส่ง)": float(row["shipping"]) + float(row["pay_amount"]),
-#             "shipping_code": row["shipping_code"],
-#             "address": row["address"],
-#             "province": row["province"],
-#             "district": row["district"],
-#             "subdistrict": row["subdistrict"],
-#             "zipcode": str(row["zipcode"]),
-#             "status": row["postatus"],
-#         }
-
-#         final_output = {
-#             "success": True,
-#             "message": "ดึงข้อมูลสำเร็จ",
-#             "order": order_data
-#         }
-
-#         print("[track_order_tool] OUTPUT:", final_output)
-
-#         return json.dumps(final_output, ensure_ascii=False, indent=2)
-
-#     except Exception as e:
-#         print(f"เกิดข้อผิดพลาด: {str(e)}")
-#         return f"เกิดข้อผิดพลาด: {str(e)}"
-
-#     finally:
-#         db.close()
-
 @tool
 def track_order_tool(order_id: str, name: str) -> str:
     """
@@ -515,12 +460,14 @@ def create_ticket(data: CreateTicketInput, session_id: str) -> str:
         resp = requests.post(URL, headers=headers, json=payload)
         resp.raise_for_status()
         external_raw = resp.json()
+        # print("=== CREATE TICKET API RESPONSE ===")
+        # print(json.dumps(external_raw, ensure_ascii=False, indent=2))
+        # print("==================================")
 
         if external_raw.get("success") is True:
             external_ok = True
             ticket_code = external_raw.get("code")
-            # print(external_raw)
-            # print(ticket_code)
+            print("ticket_code:", ticket_code)
         else:
             external_error = external_raw.get("msg")
     

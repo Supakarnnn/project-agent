@@ -1,14 +1,15 @@
+import os, re
 import asyncio, logging
-import torch, json
+import json, httpx, random, string
 from typing import Any, Dict, List, Optional
 from datetime import date, datetime, time, timedelta
-from fastapi import Request, Depends, HTTPException, APIRouter, Header
+from fastapi import Request, Depends, HTTPException, APIRouter, Header, File, UploadFile
 from fastapi import FastAPI, Response, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
 from agent.react import react_agent
-from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate, feedbackget
-from agent.model import get_current_llm_setting, ChatSession, summary_llm
+from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate, feedbackget, AddProductInput
+from agent.model import get_current_llm_setting, ChatSession, summary_llm, file_llm
 from connect_milvus import connect_milvus
 from pymilvus import utility, Collection, connections
 from agent.tool_call import (create_ticket, get_registered_tools, track_order_tool, suggest_product_search, create_order, cancel_order, product_detail_search, promotion_search)
@@ -21,6 +22,7 @@ from log_func.message_insight import extract_insight_with_llm, normalize_insight
 from sentiment_model.s_model import detect_sentiment
 from auth_admin.auth import verify_password, hash_password
 from agent.confident_cal import cal_confidence
+from agent.file_ex import extract_text_from_file, ProductList
 from ingest_data_v2 import ingest_promotion_product, ingest_all_product, ingest_detail_product
 from contextlib import asynccontextmanager, suppress
 from sqlalchemy.orm import Session
@@ -29,7 +31,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_pg_conn, get_db_session, get_maria_session, get_maria_conn, async_get_pg_conn, AsyncSessionLocal
 from admin_function.live_chat import manager
 import threading
-
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -660,6 +661,181 @@ def give_feedback(data: feedbackget, db: Session = Depends(get_pg_conn)):
     
     return {"ok": True, "feedback": dict(row)}
 
+@router.post("/extract_file", response_model=ProductList)
+async def extract_file(file: UploadFile = File(...)):
+    
+    if not (file.filename.lower().endswith(".pdf") or file.filename.lower().endswith(".txt")):
+        raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ .pdf และ .txt เท่านั้น")
+    
+    raw_text = await extract_text_from_file(file)
+    # print(raw_text)
+    
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="ไม่พบข้อความในไฟล์นี้ หรือไฟล์ว่างเปล่า")
+
+    prompt = f"""You are a product data extraction specialist. Carefully read the text below and extract every product mentioned.
+
+Important rules:
+- All output must be in Thai, except name_eng which must be in English.
+- name: Product name (Thai only).
+- name_eng: Product name (English only).
+- detail: Full product description — write comprehensively, do not shorten.
+- category_l1: Main category (e.g. skincare, makeup, supplement)
+- category_l2: Sub-category (e.g. serum, sunscreen, cleanser)
+- key_features: **CRITICAL — must be thorough and detailed.** List ALL key features, highlights, benefits, and selling points mentioned in the document. Do NOT summarize briefly.
+- Do NOT fabricate or hallucinate any data. If information is not found in the document, use "-".
+- Extract as completely as possible from the document. Do NOT truncate, abbreviate, or summarize.
+- Do NOT use bullet points, dashes, numbering, or any special symbols in the output. Write in plain text only, use ", " (comma and space) to separate multiple items.
+- notes: Any additional notes (if available)
+
+---
+{raw_text}"""
+
+    # print(raw_text)
+    
+    try:
+        structured_llm = file_llm.with_structured_output(ProductList)
+        result = structured_llm.invoke(prompt)
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดจาก AI: {str(e)}")
+
+def parse_google_url(url: str):
+    """Extract doc_id and doc_type (docs/sheets) from a Google Docs/Sheets URL."""
+    docs_match = re.search(r"docs\.google\.com/document/d/([a-zA-Z0-9_-]+)", url)
+    if docs_match:
+        return docs_match.group(1), "docs"
+
+    sheets_match = re.search(r"docs\.google\.com/spreadsheets/d/([a-zA-Z0-9_-]+)", url)
+    if sheets_match:
+        return sheets_match.group(1), "sheets"
+
+    return None, None
+
+@router.post("/google_extract_file", response_model=ProductList)
+async def google_extract_file(url: str = Query(..., description="Google Docs or Sheets URL")):
+    doc_id, doc_type = parse_google_url(url)
+
+    if not doc_id:
+        raise HTTPException(status_code=400, detail="URL ไม่ถูกต้อง กรุณาใส่ลิงก์ Google Docs หรือ Google Sheets")
+
+    if doc_type == "docs":
+        export_url = f"https://docs.google.com/document/d/{doc_id}/export?format=txt"
+    else:
+        export_url = f"https://docs.google.com/spreadsheets/d/{doc_id}/export?format=csv"
+
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        try:
+            res = await client.get(export_url)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"ไม่สามารถเชื่อมต่อ Google ได้: {str(e)}")
+
+    if res.status_code != 200:
+        raise HTTPException(status_code=400, detail=f"ไม่สามารถดึงข้อมูลจากลิงก์นี้ได้ (status {res.status_code}) — กรุณาตรวจสอบว่าไฟล์เปิดสาธารณะ")
+
+    raw_text = res.text.strip()
+
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="ไม่พบข้อความในเอกสารนี้ หรือเอกสารว่างเปล่า")
+
+    prompt = f"""You are a product data extraction specialist. Carefully read the text below and extract every product mentioned.
+
+Important rules:
+- All output must be in Thai, except name_eng which must be in English.
+- name: Product name (Thai only).
+- name_eng: Product name (English only).
+- detail: Full product description — write comprehensively, do not shorten.
+- category_l1: Main category (e.g. skincare, makeup, supplement)
+- category_l2: Sub-category (e.g. serum, sunscreen, cleanser)
+- key_features: **CRITICAL — must be thorough and detailed.** List ALL key features, highlights, benefits, and selling points mentioned in the document. Do NOT summarize briefly.
+- Do NOT fabricate or hallucinate any data. If information is not found in the document, use "-".
+- Extract as completely as possible from the document. Do NOT truncate, abbreviate, or summarize.
+- Do NOT use bullet points, dashes, numbering, or any special symbols in the output. Write in plain text only, use ", " (comma and space) to separate multiple items.
+- notes: Any additional notes (if available)
+
+---
+{raw_text}"""
+
+    try:
+        structured_llm = file_llm.with_structured_output(ProductList)
+        result = structured_llm.invoke(prompt)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดจาก AI: {str(e)}")
+
+def generate_product_code() -> str:
+    part1 = ''.join(random.choices(string.ascii_uppercase, k=3))
+    part2 = ''.join(random.choices(string.ascii_uppercase, k=3))
+    part3 = ''.join(random.choices(string.digits, k=3))
+    return f"{part1}-{part2}-{part3}"
+
+@router.post("/add_product")
+async def add_product(data: AddProductInput):
+    code = generate_product_code()
+
+    payload_api1 = {
+        "ProductName": data.name,
+        "ProductName_Eng": data.name_eng,
+        "PricePerUnit": data.cost,
+        "ProductDetail": data.detail,
+        "is_stock": "T",
+        "is_overstock": "F",
+        "code": code,
+        "barcode": code,
+    }
+
+    payload_api2 = {
+        "store_id": 1,
+        "name": data.name,
+        "name_eng": data.name_eng,
+        "cost": data.cost,
+        "detail": data.detail,
+        "code": code,
+        "barcode": code,
+        "stock_qty": data.stock_qty,
+        "brand": data.brand,
+        "category_l1": data.category_l1,
+        "category_l2": data.category_l2,
+        "key_features": data.key_features,
+        "key_ingredients": data.key_ingredients,
+        "suitable_for_concern": data.suitable_for_concern,
+        "size_volume": data.size_volume,
+        "usage_instructions": data.usage_instructions,
+        "notes": data.notes,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {os.getenv("SAVE_TOKEN")}",
+        "Content-Type": "application/json",
+    }
+
+    results = {}
+    
+    # print("=== payload_api1 ===", json.dumps(payload_api1, ensure_ascii=False, indent=2))
+    # print("=== payload_api2 ===", json.dumps(payload_api2, ensure_ascii=False, indent=2))
+    
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            res1 = await client.post(os.getenv("SAVE_PRODUCT_API"), json=payload_api1, headers=headers)
+            # print("=== res_api1 ===", res1.status_code, res1.text)
+            results["api1"] = {"status": res1.status_code, "body": res1.json() if res1.status_code == 200 else res1.text}
+        except Exception as e:
+            results["api1"] = {"status": "error", "body": str(e)}
+
+        try:
+            res2 = await client.post(os.getenv("SAVE_MAT_API"), json=payload_api2, headers=headers)
+            # print("=== res_api2 ===", res2.status_code, res2.text)
+            results["api2"] = {"status": res2.status_code, "body": res2.json() if res2.status_code == 200 else res2.text}
+        except Exception as e:
+            results["api2"] = {"status": "error", "body": str(e)}
+
+    return {
+        "ok": True,
+        "code": code,
+        "results": results,
+    }
+
 app.include_router(router)
 
 @app.post("/chat")
@@ -965,6 +1141,7 @@ def test_both(pg: Session = Depends(get_pg_conn), maria: Session = Depends(get_m
 
     # GPU
     try:
+        import torch
         if torch.cuda.is_available():
             out["gpu"] = {
                 "ok": True,

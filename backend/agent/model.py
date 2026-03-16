@@ -49,6 +49,12 @@ summary_llm = ChatOpenAI(
     temperature=0,
 )
 
+file_llm = ChatOpenAI(
+    api_key=os.environ.get("OPENAI_KEY"),
+    model="gpt-4.1-nano-2025-04-14",
+    temperature=0,
+)
+
 sentiment_llm = ChatOpenAI(
     api_key=os.environ.get("OPENAI_KEY"),
     model="gpt-4.1-nano-2025-04-14",

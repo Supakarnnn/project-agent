@@ -10,7 +10,7 @@ export default function ChatBox({ chatRef }) {
     // fixed ai message
     const INITIAL_MESSAGE = {
         role: "ai",
-        content: "สวัสดีค่ะ ฉันชื่อ Vitails 🩺 พร้อมช่วยแนะนำสินค้าสุขภาพให้คุณค่ะ",
+        content: "สวัสดีค่ะ ฉันชื่อ Vitails 🩺 พร้อมช่วยแนะนำสินค้าสุขภาพค่ะ",
     };
 
     // storage keys
@@ -59,7 +59,6 @@ export default function ChatBox({ chatRef }) {
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
 
-    // Determine initial mode based on the last message in history
     const [isAgentMode, setIsAgentMode] = useState(() => {
         const stored = getChatFromStorage();
         if (!stored || stored.length === 0) return false;
@@ -319,7 +318,9 @@ export default function ChatBox({ chatRef }) {
                                 className={`${styles.bubble} ${styles.aiBubble}`}
                             >
                                 <div className={styles.typingIndicator}>
-                                    Thinking...
+                                    <span className={styles.typingDot}></span>
+                                    <span className={styles.typingDot}></span>
+                                    <span className={styles.typingDot}></span>
                                 </div>
                             </div>
                         </div>
@@ -367,6 +368,14 @@ export default function ChatBox({ chatRef }) {
                             </svg>
                         </button>
                     </div>
+                </div>
+                <div className={styles.disclaimer}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="16" x2="12" y2="12" />
+                        <line x1="12" y1="8" x2="12.01" y2="8" />
+                    </svg>
+                    Vitalis AI may contain errors. Important information should be checked.
                 </div>
             </div>
         </section>

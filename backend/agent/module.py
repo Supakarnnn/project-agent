@@ -94,3 +94,19 @@ class feedbackget(BaseModel):
     message_id: int = Field(..., ge=1)
     rating: int = Field(..., ge=1, le=5)
     session_id: str | None = None
+
+class AddProductInput(BaseModel):
+    name: str
+    name_eng: str
+    cost: float
+    detail: str = ""
+    stock_qty: str = "0"
+    brand: str = ""
+    category_l1: str = ""
+    category_l2: str = ""
+    key_features: str = ""
+    key_ingredients: str = ""
+    suitable_for_concern: str = ""
+    size_volume: str = ""
+    usage_instructions: str = ""
+    notes: str = ""
