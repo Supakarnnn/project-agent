@@ -3,7 +3,6 @@ from typing import Dict, Set
 
 class LiveChatManager:
     def __init__(self):
-        # โครงสร้าง: { session_id: { "user": set(ws), "agent": set(ws) } }
         self.sessions: Dict[str, Dict[str, Set[WebSocket]]] = {}
 
     async def connect(self, session_id: str, role: str, websocket: WebSocket):
@@ -24,7 +23,6 @@ class LiveChatManager:
             pass
 
     async def broadcast(self, session_id: str, message: dict):
-        """ส่ง message ไปยังทุก WebSocket ที่อยู่ใน session_id นั้น"""
         if session_id not in self.sessions:
             return
 
@@ -36,7 +34,6 @@ class LiveChatManager:
                 except Exception:
                     dead.append((session_id, role, ws))
 
-        # ลบตัวที่ตายแล้ว
         for s_id, role, ws in dead:
             self.disconnect(s_id, role, ws)
 

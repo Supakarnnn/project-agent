@@ -6,13 +6,13 @@ from datetime import date, datetime, time, timedelta
 from fastapi import Request, Depends, HTTPException, APIRouter, Header, File, UploadFile
 from fastapi import FastAPI, Response, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.messages import HumanMessage,AIMessage,SystemMessage
+from langchain_core.messages import HumanMessage,AIMessage,SystemMessage,ToolMessage
 from agent.react import react_agent
-from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate, feedbackget, AddProductInput
+from agent.module import RequestMessage,ConfigUpdate, LoginIn, IntentCreate, feedbackget, AddProductInput, BulkAddProductInput, REQUIRED_FIELDS
 from agent.model import get_current_llm_setting, ChatSession, summary_llm, file_llm
 from connect_milvus import connect_milvus
 from pymilvus import utility, Collection, connections
-from agent.tool_call import (create_ticket, get_registered_tools, track_order_tool, suggest_product_search, create_order, cancel_order, product_detail_search, promotion_search)
+from agent.tool_call import (get_brands,create_ticket, get_registered_tools, track_order_tool, suggest_product_search, create_order, cancel_order, product_detail_search, promotion_search)
 from intents.intent_matcher import load_intents, resolve_intent_with_context
 from intents.runtime import get_session_state, save_session_state
 from log_func.session import autoclose_inactive_sessions, get_or_create_session, update_session_activity, close_session_now, chat_message_log
@@ -32,6 +32,7 @@ from database import get_pg_conn, get_db_session, get_maria_session, get_maria_c
 from admin_function.live_chat import manager
 import threading
 import urllib3
+# from test_ragas.test_ragas import log_ragas_row
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 import dotenv
@@ -835,6 +836,101 @@ async def add_product(data: AddProductInput):
         "code": code,
         "results": results,
     }
+@router.post("/bulk_add_products")
+async def bulk_add_products(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+ 
+    products_raw = body if isinstance(body, list) else body.get("products")
+    if not isinstance(products_raw, list) or len(products_raw) == 0:
+        raise HTTPException(status_code=400, detail="Body must be a non-empty list of products")
+ 
+    errors = []
+    for i, row in enumerate(products_raw):
+        missing = REQUIRED_FIELDS - set(row.keys())
+        if missing:
+            errors.append({"row": i + 1, "missing_fields": sorted(missing)})
+ 
+    if errors:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Missing required fields", "errors": errors},
+        )
+ 
+    try:
+        data = BulkAddProductInput(products=products_raw)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+ 
+    headers = {
+        "Authorization": f"Bearer {os.getenv('SAVE_TOKEN')}",
+        "Content-Type": "application/json",
+    }
+ 
+    results = []
+ 
+    async with httpx.AsyncClient(timeout=30) as client:
+        for item in data.products:
+            code = generate_product_code()
+ 
+            payload_api1 = {
+                "ProductName": item.name,
+                "ProductName_Eng": item.name_eng,
+                "PricePerUnit": item.cost,
+                "ProductDetail": item.detail,
+                "is_stock": "T",
+                "is_overstock": "F",
+                "code": code,
+                "barcode": code,
+            }
+ 
+            payload_api2 = {
+                "store_id": 1,
+                "name": item.name,
+                "name_eng": item.name_eng,
+                "cost": item.cost,
+                "detail": item.detail,
+                "code": code,
+                "barcode": code,
+                "stock_qty": item.stock_qty,
+                "brand": item.brand,
+                "category_l1": item.category_l1,
+                "category_l2": item.category_l2,
+                "key_features": item.key_features,
+                "key_ingredients": item.key_ingredients,
+                "suitable_for_concern": item.suitable_for_concern,
+                "size_volume": item.size_volume,
+                "usage_instructions": item.usage_instructions,
+                "notes": item.notes,
+            }
+ 
+            item_result = {"name": item.name, "code": code, "api1": {}, "api2": {}}
+ 
+            try:
+                res1 = await client.post(os.getenv("SAVE_PRODUCT_API"), json=payload_api1, headers=headers)
+                item_result["api1"] = {"status": res1.status_code, "body": res1.json() if res1.status_code == 200 else res1.text}
+            except Exception as e:
+                item_result["api1"] = {"status": "error", "body": str(e)}
+ 
+            try:
+                res2 = await client.post(os.getenv("SAVE_MAT_API"), json=payload_api2, headers=headers)
+                item_result["api2"] = {"status": res2.status_code, "body": res2.json() if res2.status_code == 200 else res2.text}
+            except Exception as e:
+                item_result["api2"] = {"status": "error", "body": str(e)}
+ 
+            ok = item_result["api1"].get("status") == 200 and item_result["api2"].get("status") == 200
+            item_result["ok"] = ok
+            results.append(item_result)
+ 
+    return {
+        "ok": True,
+        "total": len(results),
+        "success": sum(1 for r in results if r["ok"]),
+        "failed": sum(1 for r in results if not r["ok"]),
+        "results": results,
+    }
 
 app.include_router(router)
 
@@ -845,64 +941,7 @@ async def chat(
     external_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
     close_now: Optional[str] = Header(None, alias="X-Close-Session"),
 ):
-    # messages = []
-    # recent_messages = []
-    # humanmes = []
-    # aimanmes = []
-    
-    # await autoclose_inactive_sessions(db)
-    # session_id = await get_or_create_session(db, external_session_id)
-    # log_session_id = str(session_id)
-
-    # last_human_message = ""
-    # for m in reversed(chatmessage.messages):
-    #     if m.role == 'human' and m.content.strip():
-    #         last_human_message = m.content.strip()
-    #         break
-
-    # print("\n=== Incoming Messages Check ===")
-    # for i, chat in enumerate(chatmessage.messages):
-    #     print(f"[{i+1}] Role: {chat.role} | Content: {chat.content}")
-    # print("===============================\n")
-
-    # MAX_RECENT_MESSAGES = 10
-    # summary_message = None
-
-    # if len(chatmessage.messages) > MAX_RECENT_MESSAGES:
-    #     older_raw = chatmessage.messages[:-MAX_RECENT_MESSAGES]
-    #     recent_raw = chatmessage.messages[-MAX_RECENT_MESSAGES:]
         
-    #     older_text = "\n".join([f"{m.role}: {m.content}" for m in older_raw])
-    #     summary_prompt = f"Summarize the key points of the following conversation as concisely as possible to provide context for the AI ​​to answer the following questions.:\n{older_text}"
-    #     print("summary llm start")
-    #     summary_result = await summary_llm.ainvoke([HumanMessage(content=summary_prompt)])
-    #     print("summary llm end")
-    #     summary_message = SystemMessage(content=f"[SUMMARY OF PAST CONVERSATION]: {summary_result.content}")
-    # else:
-    #     recent_raw = chatmessage.messages
-
-    # print("summary_message:", summary_message)
-
-    # for chat in recent_raw:
-    #     if chat.role == 'ai':
-    #         recent_messages.append(AIMessage(content=chat.content))
-    #         aimanmes.append(chat.content.strip())
-    #     elif chat.role == 'human':
-    #         recent_messages.append(HumanMessage(content=chat.content))
-    #         humanmes.append(chat.content.strip())
-    #     elif chat.role == 'system':
-    #         recent_messages.append(SystemMessage(content=chat.content))
-    #     elif chat.role == 'agent':
-    #         formatted_content = f"[Call Center Agent (Human)]: {chat.content}"
-    #         recent_messages.append(AIMessage(content=formatted_content))
-    #         aimanmes.append(formatted_content)
-    
-    # if summary_message:
-    #     messages.append(summary_message)
-        
-    # messages.extend(recent_messages)
-    # print("api message recived")
-    
     messages = []
     humanmes = []
     aimanmes = []
@@ -982,7 +1021,8 @@ async def chat(
         "suggest_product_search": suggest_product_search,
         "product_detail_search": product_detail_search,
         "promotion_search": promotion_search,
-        "create_ticket": create_ticket
+        "create_ticket": create_ticket,
+        "get_brands": get_brands
     }
 
     chosen_tools = [
@@ -992,6 +1032,7 @@ async def chat(
         tool_registry["product_detail_search"],
         tool_registry["promotion_search"],
         tool_registry["create_order"],
+        tool_registry["get_brands"]
     ]
 
     if tool_name and tool_name in tool_registry:
@@ -1032,9 +1073,31 @@ async def chat(
     final_msg: AIMessage = result["messages"][-1]
     final_result: str = final_msg.content
     print("react_agent end")
+    #============================RAGAS====================================#
+    # RAG_TOOLS = {"suggest_product_search", "product_detail_search", "promotion_search"}
+    # retrieved_contexts = []
+    # for msg in result["messages"]:
+    #     if isinstance(msg, ToolMessage) and msg.name in RAG_TOOLS:
+    #         retrieved_contexts.append(msg.content)
+            
+    # tool_queries = {}
+    # for msg in result["messages"]:
+    #     if hasattr(msg, "tool_calls"):
+    #         for tc in msg.tool_calls:
+    #             if tc["name"] in RAG_TOOLS:
+    #                 tool_queries[tc["name"]] = tc["args"].get("query") or tc["args"].get("name", "")
+            
+    # if retrieved_contexts:
+    #     await log_ragas_row(
+    #         user_input=last_human_message,
+    #         ai_query=tool_queries,
+    #         retrieved_contexts=retrieved_contexts,
+    #         response=final_result
+    #     )
+    #=====================================================================#
     
     #======================CHECK TOKEN===================================#
-    print("usage_metadata:", final_msg.usage_metadata)
+    # print("usage_metadata:", final_msg.usage_metadata)
     #=====================================================================#
 
     #=========================== CONFIDENCE ==============================#

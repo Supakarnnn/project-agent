@@ -110,3 +110,28 @@ class AddProductInput(BaseModel):
     size_volume: str = ""
     usage_instructions: str = ""
     notes: str = ""
+    
+REQUIRED_FIELDS = {
+    "name", "name_eng", "cost", "detail", "brand",
+    "category_l1", "category_l2", "key_features", "key_ingredients",
+    "suitable_for_concern", "size_volume", "usage_instructions", "notes",
+}
+
+class BulkProductItem(BaseModel):
+    name: str
+    name_eng: str
+    cost: float
+    detail: str
+    stock_qty: int = 0
+    brand: str
+    category_l1: str
+    category_l2: str
+    key_features: str
+    key_ingredients: str
+    suitable_for_concern: str
+    size_volume: str
+    usage_instructions: str
+    notes: str
+
+class BulkAddProductInput(BaseModel):
+    products: list[BulkProductItem]

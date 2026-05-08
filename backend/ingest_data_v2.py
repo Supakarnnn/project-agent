@@ -15,6 +15,16 @@ MILVUS_PRODUCT_DETAIL_COLLECTION = os.getenv("MILVUS_PRODUCT_DETAIL_COLLECTION")
 MILVUS_PROMOTION_COLLECTION= os.getenv("MILVUS_PROMOTION_COLLECTION")
 BATCH_SIZE = 1000
 
+def dedup(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = set()
+    result = []
+    for row in rows:
+        name = row.get("name")
+        if name not in seen:
+            seen.add(name)
+            result.append(row)
+    return result
+
 def fetch_products_batch(db: Session, limit=1000, offset=0) -> List[Dict[str, Any]]:
     q = text("""
         SELECT
@@ -108,11 +118,24 @@ def ingest_all_product(batch_size: int = BATCH_SIZE) -> int:
     db = get_maria_session()
     try:
         offset = 0
+        seen_names = set()
         while True:
             chunk = fetch_products_batch(db, limit=batch_size, offset=offset)
             if not chunk:
                 break
-            total += upsert_rows(vs, chunk)
+            
+            unique_chunk = []
+            for row in chunk:
+                name = row.get("name")
+                if name not in seen_names:
+                    seen_names.add(name)
+                    unique_chunk.append(row)
+
+            skipped = len(chunk) - len(unique_chunk)
+            if skipped:
+                print(f"[dedup] skipped {skipped} duplicate(s) in this batch")
+
+            total += upsert_rows(vs, unique_chunk)
             offset += batch_size
             print(f"Inserted {total}")
     finally:
@@ -178,11 +201,24 @@ def ingest_detail_product(batch_size: int = BATCH_SIZE) -> int:
     db = get_maria_session()
     try:
         offset = 0
+        seen_names = set()
         while True:
             chunk = fetch_products_batch(db, limit=batch_size, offset=offset)
             if not chunk:
                 break
-            total += upsert_rows_detail(vs, chunk)
+
+            unique_chunk = []
+            for row in chunk:
+                name = row.get("name")
+                if name not in seen_names:
+                    seen_names.add(name)
+                    unique_chunk.append(row)
+
+            skipped = len(chunk) - len(unique_chunk)
+            if skipped:
+                print(f"[dedup] skipped {skipped} duplicate(s)")
+
+            total += upsert_rows_detail(vs, unique_chunk)
             offset += batch_size
             print(f"Inserted {total}")
     finally:
@@ -271,3 +307,37 @@ def ingest_promotion_product(batch_size: int = BATCH_SIZE) -> int:
 # if __name__ == "__main__":
 #     n = ingest_promotion_product()
 #     print(f"Done. Inserted {n} products into Milvus collection '{MILVUS_PROMOTION_COLLECTION}'.")
+
+
+
+def test_fetch(db: Session, limit=1000, offset=0) -> List[Dict[str, Any]]:
+    q = text("""
+        SELECT
+             id,
+             code,
+             name,
+             name_eng,
+             detail,
+             cost,
+             brand,
+             category_l1,
+             category_l2,
+             key_features,
+             key_ingredients,
+             suitable_for_concern,
+             size_volume,
+             usage_instructions,
+             notes
+        FROM tbl_material
+        ORDER BY id
+        LIMIT :limit OFFSET :offset
+    """)
+    # print(len(q.text))  
+    return len(q.text)
+
+
+if __name__ == "__main__":
+    db = get_maria_session()
+    n = test_fetch(db)
+    print(n)
+    db.close()

@@ -43,7 +43,7 @@ async def suggest_product_search(query: str, min_price: Optional[int] = None, ma
         if max_price is not None: price.append(f"cost <= {max_price}")
         expr = " and ".join(price) if price else None
 
-        k = 10
+        k = 7
         results = await vectorstore.asimilarity_search_with_score(query, k=k, expr=expr)
         if not results:
             return f"ไม่สิ้นค้าที่เกี่ยวข้องกับ {query}"
@@ -51,7 +51,7 @@ async def suggest_product_search(query: str, min_price: Optional[int] = None, ma
         lines = []
         for doc, dist in results:
             sim = 1.0 - float(dist)
-            if sim < 0.05:
+            if sim < 0.15:
                 continue
 
             m = doc.metadata or {}
@@ -292,8 +292,8 @@ def create_order(data: CreateOrderInput) -> str:
 
     check = val_address(
     province=data.province, #กรุงเทพ
-    district=data.district, #บางกอกน้อย
-    subdistrict=data.subdistrict, #อรุณอมรินทร์
+    district=data.district, #บางกอกน้อย เขต
+    subdistrict=data.subdistrict, #อรุณอมรินทร์ แขวง
     zipcode=data.zipcode
     )
 
@@ -308,8 +308,8 @@ def create_order(data: CreateOrderInput) -> str:
     if not check["ok"]:
         return json.dumps({
             "success": False,
-            "error": "ที่อยู่ไม่ถูกต้อง/ไม่พบในฐานข้อมูล",
-            "reason": check["reason"]
+            "error": "ที่อยู่ไม่ถูกต้อง ให้ลูกค้าเช็ค เขต แขวง และ รหัสไปรษณีย์",
+            "result": check["reason"]
         }, ensure_ascii=False, indent=2)
     
     else:
@@ -384,6 +384,7 @@ def create_order(data: CreateOrderInput) -> str:
         db = get_maria_session()
         try:
             resp = requests.post(URL, headers=headers, json=payload)
+            
             response_data = resp.json()
 
             shipping_code = response_data.get("value", {}).get("shipping_code")
@@ -506,3 +507,42 @@ def create_ticket(data: CreateTicketInput, session_id: str) -> str:
         print(result)
         return json.dumps(result, ensure_ascii=False)
     #==========================================#
+
+#@tool
+#def check_address(district: str, subdistrict:str, zipcode: int, province:str) -> str:
+
+
+@tool
+def get_brands(category_l1: str = None, category_l2: str = None) -> str:
+    """
+    ค้นหา brand ตาม category
+    - category_l1: หมวดหมู่หลัก (Skincare, Makeup, Hair Care, Supplements, Personal Care)
+    - category_l2: หมวดหมู่ย่อย (Serum, Sunscreen, Lipstick, Vitamic C, Lotion, Essence, Ampoule, Moisturizer, Hair Treatment, Hair Serum, Hair Oil, Blush, Antioxidant, Cleanser, Body Serum, Mouthwash)
+    ถ้าไม่ระบุ parameter จะคืน brand ทั้งหมด
+    """
+    print("LLM is trying to use get_brand")
+    query = "SELECT DISTINCT brand FROM tbl_material WHERE 1=1"
+    
+    # Use a dictionary for named parameters
+    params = {}
+    
+    if category_l1:
+        query += " AND LOWER(category_l1) = LOWER(:category_l1)"
+        params["category_l1"] = category_l1
+    
+    if category_l2:
+        query += " AND LOWER(category_l2) = LOWER(:category_l2)"
+        params["category_l2"] = category_l2
+    
+    query += " ORDER BY brand"
+
+    db = get_maria_session()
+    
+    # Pass the params dictionary directly (no brackets)
+    results = db.execute(text(query), params).mappings().all()
+    brands = [row["brand"] for row in results]
+    
+    if not brands:
+        return "ไม่พบ brand ในหมวดหมู่นี้"
+    
+    return f"พบ {len(brands)} brand: {', '.join(brands)}"

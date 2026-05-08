@@ -97,7 +97,7 @@ export default function Home() {
                     <td>{t.intent_name}</td>
                     <td>{f2f(t.intent_score)}</td>
                     <td>{f2f(t.ai_confident)}</td>
-                    <td>{t.created_at ? new Date(t.created_at).toLocaleString("th-TH"):"-"}</td>
+                    <td>{t.created_at ? new Date(t.created_at).toLocaleString("th-TH") : "-"}</td>
                     <td>{t.used_tools}</td>
                   </tr>
                 ))}
